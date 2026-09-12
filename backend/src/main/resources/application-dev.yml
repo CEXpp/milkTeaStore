@@ -4,9 +4,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # allowPublicKeyRetrieval=true 必须加：MySQL 8 默认 caching_sha2_password，
     # JDBC 非 SSL 连接时不加会报 Public Key Retrieval is not allowed
-    url: jdbc:mysql://192.168.30.101:3307/demo_db?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    url: jdbc:mysql://115.190.216.167:3306/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: milk_tea
+    password: 1234
   jpa:
     hibernate:
       ddl-auto: validate   # 建议用 validate/none，表结构交给 Flyway 管，别让 JPA 和 Flyway 打架
@@ -16,6 +16,14 @@ spring:
     placeholders:
       adminUsername: ${admin.initial-username}
       adminPasswordHash: ${admin.initial-password-hash}
+# MyBatis-Plus：表结构仍由 Flyway 管，这里只做映射配置
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
 # minio.* 的层级结构按项目配置类 / LLD 定义对齐，URL 参数同理
 minio:
   endpoint: http://192.168.30.101:9000
