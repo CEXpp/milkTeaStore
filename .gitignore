@@ -1,0 +1,2 @@
+# Docker 本地真实凭据，禁止提交（.env.example 可提交）
+docker/.env

@@ -1,0 +1,48 @@
+# 本阶段仅含 MySQL + MinIO，backend 服务后续阶段再加
+services:
+  mysql:
+    image: mysql:8.0                # 建议钉在 8.0 系列；mysql:8 会漂到 8.4，行为略有差异
+    container_name: demo-mysql
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # 应用库 / 专用账号：与 LLD 对齐（此处沿用文档示例库名 demo_db）
+      MYSQL_DATABASE: demo_db
+      # MYSQL_USER: demo
+      # MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s            # 首次建库慢，给足宽限期
+  minio:
+    image: minio/minio:latest
+    container_name: demo-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"                # S3 API
+      - "9001:9001"                # Web 控制台
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+volumes:
+  mysql-data:
+  minio-data:
