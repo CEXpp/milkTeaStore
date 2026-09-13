@@ -5,4 +5,4 @@ docker/.env
 .idea/
 
 # 设计参考文档缓存（来源：项目网盘，本地仅作阅读缓存，不入库）
-.workbuddy/docs/
+.workbuddy/

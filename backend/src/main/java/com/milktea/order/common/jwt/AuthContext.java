@@ -2,29 +2,44 @@ package com.milktea.order.common.jwt;
 
 import com.milktea.order.common.jwt.JwtUtil;
 
+import java.lang.ScopedValue;
+
 /**
- * 当前请求的身份上下文（ThreadLocal）。
+ * 当前请求的身份上下文（基于 {@link ScopedValue}，JDK 24 定稿的标准特性；本项目 Java 25 直接可用，无需 --enable-preview）。
  * <p>
- * 由 {@link JwtAuthenticationFilter} 在鉴权成功后写入，请求处理完毕后由过滤器统一清理。
+ * 由 {@link JwtAuthenticationFilter} 在鉴权成功后通过 {@link #runWith(Principal, Runnable)} 绑定，
+ * 作用域覆盖整段请求处理链（Controller / Service），作用域结束自动失效，<b>无需手动清理</b>。
  * 下游 Controller / Service 通过 {@link #get()} 读取身份，无需重复解析令牌。
+ * <p>
+ * 相较 {@code ThreadLocal} 的优势：不可变、自动清理（无内存泄漏 / 串号风险）、对虚拟线程友好。
+ * 注意：作用域内的值仅沿调用栈向下传递，不会自动跨入新开线程 / {@code @Async} / {@code CompletableFuture}，
+ * 若异步分支需读取身份，应在异步任务内重新 {@link #runWith} 绑定。
  */
 public final class AuthContext {
 
-    private static final ThreadLocal<Principal> CURRENT = new ThreadLocal<>();
+    private static final ScopedValue<Principal> CURRENT = ScopedValue.newInstance();
 
     private AuthContext() {
     }
 
-    public static void set(Principal principal) {
-        CURRENT.set(principal);
+    /**
+     * 在作用域内执行 {@code action}；整段调用链（含 Controller / Service）均可经 {@link #get()} 读取身份。
+     * 作用域随 {@code action} 执行结束自动解除，无需 {@code clear()}。
+     *
+     * @param principal 当前请求身份
+     * @param action    请求处理逻辑（通常包裹 {@code filterChain.doFilter}）
+     */
+    public static void runWith(Principal principal, Runnable action) {
+        ScopedValue.where(CURRENT, principal).run(action);
+
     }
 
+    /**
+     * 读取当前身份。若当前不在任何请求作用域内（如白名单路径、作用域外）返回 {@code null}，
+     * 与旧 {@code ThreadLocal} 未绑定时的语义保持一致。
+     */
     public static Principal get() {
-        return CURRENT.get();
-    }
-
-    public static void clear() {
-        CURRENT.remove();
+        return CURRENT.orElse(null);
     }
 
     /** 当前登录主体。 */
