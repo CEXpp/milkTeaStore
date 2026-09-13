@@ -124,16 +124,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 鉴权通过：写入身份上下文，并在请求属性中透传，供下游 Controller 使用
+        // 鉴权通过：在 ScopedValue 作用域内执行整段请求处理链，作用域结束自动失效（无需手动清理）
         Principal principal = buildPrincipal(role, claims);
-        AuthContext.set(principal);
         request.setAttribute("authPrincipal", principal);
-
-        try {
-            filterChain.doFilter(request, response);
-        } finally {
-            AuthContext.clear();
-        }
+        AuthContext.runWith(principal, () -> {
+            try {
+                filterChain.doFilter(request, response);
+            } catch (IOException | ServletException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     private boolean isWhitelisted(String path) {
