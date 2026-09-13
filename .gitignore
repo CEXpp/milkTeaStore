@@ -1,2 +1,8 @@
 # Docker 本地真实凭据，禁止提交（.env.example 可提交）
 docker/.env
+
+# IDE 产物，禁止提交
+.idea/
+
+# 设计参考文档缓存（来源：项目网盘，本地仅作阅读缓存，不入库）
+.workbuddy/docs/
