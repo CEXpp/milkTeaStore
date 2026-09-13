@@ -62,6 +62,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <!-- JSON 支持：webmvc starter 不含 jackson，显式引入以提供 ObjectMapper（JwtAuthenticationFilter 序列化 R 体） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
         <!-- Actuator：暴露 /actuator/health 等生产端点（T04） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
