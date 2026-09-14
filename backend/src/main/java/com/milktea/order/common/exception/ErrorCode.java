@@ -19,6 +19,10 @@ public enum ErrorCode {
     SHOP_PAUSED(1006, "店铺暂停接单"),
     DRAFT_EMPTY(1007, "草稿单为空"),
     AI_UNAVAILABLE(1008, "AI 服务不可用"),
+    FILE_TYPE_NOT_ALLOWED(1009, "仅支持图片文件"),
+    FILE_TOO_LARGE(1010, "图片大小超出限制"),
+    FILE_UPLOAD_FAILED(1011, "文件上传失败"),
+    FILE_NOT_FOUND(1012, "文件不存在"),
     INTERNAL_ERROR(500, "服务器内部错误");
 
     private final int code;

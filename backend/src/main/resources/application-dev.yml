@@ -13,6 +13,11 @@ spring:
     placeholders:
       adminUsername: ${admin.initial-username}
       adminPasswordHash: ${admin.initial-password-hash}
+  servlet:
+    multipart:
+      # 图片上传上限（T08）：单文件/单请求均 2MB，与 MinioFileStorageService.MAX_SIZE 双重校验
+      max-file-size: 2MB
+      max-request-size: 2MB
 # MyBatis-Plus：表结构仍由 Flyway 管，这里只做映射配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -22,8 +27,9 @@ mybatis-plus:
     db-config:
       id-type: auto
 # minio.* 的层级结构按项目配置类 / LLD 定义对齐，URL 参数同理
+# 注意：endpoint 必须是 S3 对象存储 API 端口（9000），9001 为 Web 控制台端口，不可用于 SDK 连接
 minio:
-  endpoint: http://192.168.30.101:9000
+  endpoint: http://115.190.216.167:9000
   access-key: root
   secret-key: 12345678
   bucket: dev-bucket
