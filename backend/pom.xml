@@ -78,6 +78,13 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- MinIO（T08 图片上传与代理流）：S3 兼容对象存储 Java SDK -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.5.17</version>
+        </dependency>
+
         <!-- JWT（HS256 双体系签发/校验，T06）：api 编译期，impl/jackson 运行期 -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
