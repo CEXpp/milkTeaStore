@@ -52,11 +52,15 @@ service.interceptors.request.use((config) => {
   return config
 })
 
-/** 401（HTTP 状态码或 body.code）：清本地鉴权信息并跳登录页（/login 免守卫） */
+/**
+ * 401（HTTP 状态码或 body.code）：清本地鉴权信息并直显错误。
+ * 提示无条件展示（登录页内的 401 即「密码错误」，属 T18 必须直显的后端语义）；
+ * 仅在非登录页时跳转，避免登录页无谓刷新。
+ */
 function handleUnauthorized(message: string): void {
   clearAuth()
+  ElMessage.error(message)
   if (window.location.pathname !== '/login') {
-    ElMessage.error(message)
     window.location.href = '/login'
   }
 }
