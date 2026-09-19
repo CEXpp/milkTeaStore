@@ -35,7 +35,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 因此「行锁递增 + 同事务回读」的并发行为是可被真实验证的，而不是靠 mock 假象。</p>
  */
 @ActiveProfiles("test")
-@SpringBootTest(classes = SequenceTestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.NONE)
+// properties 为「内联测试属性」，优先级高于操作系统环境变量：CI 会把 SPRING_DATASOURCE_URL /
+// USERNAME / PASSWORD 指向 MySQL 服务容器（供 dev 档的 BackendApplicationTests 使用），
+// 若不在此显式钉住，application-test.yml 里的 H2 数据源会被这些环境变量覆盖，
+// 出现「H2 驱动 + MySQL URL」而无法建连。此处取值与 src/test/resources/application-test.yml 保持一致。
+@SpringBootTest(
+        classes = SequenceTestApplication.class,
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {
+                "spring.datasource.url=jdbc:h2:mem:sequence-test;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.datasource.username=sa",
+                "spring.datasource.password="
+        })
 @DisplayName("T11 流水号服务（订单号 / 取餐码）")
 class SequenceServiceTest {
 
