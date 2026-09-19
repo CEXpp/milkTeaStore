@@ -169,7 +169,9 @@ class OrderServicePayTest {
 
         BusinessException ex = assertBusinessCode(ErrorCode.ORDER_STATUS_CONFLICT, () -> orderService.pay(order.getId(), CUSTOMER_A));
 
-        assertEquals("订单状态冲突", ex.getMessage());
+        // T14 起状态校验统一走 OrderStateMachine，1004 文案带上下文（「订单状态冲突：PAID 状态下不允许『支付成功』」）。
+        // 错误码语义不变，此处只断言语义前缀——文案属人读信息、允许可读性演进。
+        assertTrue(ex.getMessage().startsWith("订单状态冲突"), "实际文案：" + ex.getMessage());
         Order row = orderMapper.selectById(order.getId());
         assertEquals("001", row.getPickupCode(), "重复支付不得改取餐码");
         assertEquals(paid.getPaidAt(), row.getPaidAt(), "重复支付不得改支付时间");
