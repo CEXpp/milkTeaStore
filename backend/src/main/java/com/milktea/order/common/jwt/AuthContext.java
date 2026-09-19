@@ -39,7 +39,7 @@ public final class AuthContext {
      * 与旧 {@code ThreadLocal} 未绑定时的语义保持一致。
      */
     public static Principal get() {
-        return CURRENT.orElse(null);
+        return CURRENT.isBound() ? CURRENT.get() : null;
     }
 
     /** 当前登录主体。 */

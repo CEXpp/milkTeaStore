@@ -52,3 +52,6 @@ admin:
 app:
   cors:
     allowed-origins: "*"
+# 订单（T10）：支付期限（分钟），下单响应 expireAt = createdAt + 该值（LLD 3.3 / 4.2）
+order:
+  payment-timeout-minutes: 15
