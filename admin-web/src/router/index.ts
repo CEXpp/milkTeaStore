@@ -3,8 +3,8 @@ import { getToken } from '@/utils/token'
 
 /**
  * 路由表（LLD 7.2）：/login 免守卫；业务页面懒加载。
- * 业务页面（/board、/counter、/products、/stats、/settings）由后续任务逐个落地，
- * 本任务（T17）仅提供 /login 与 /board 占位。
+ * 已落地：/board（T19）、/counter（T20）、/products（T21）；
+ * 待落地：/stats（T35）、/settings。
  */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/board' },
@@ -23,6 +23,11 @@ const routes: RouteRecordRaw[] = [
     path: '/counter',
     name: 'counter',
     component: () => import('@/views/Counter.vue')
+  },
+  {
+    path: '/products',
+    name: 'products',
+    component: () => import('@/views/Products.vue')
   },
   { path: '/:pathMatch(.*)*', redirect: '/board' }
 ]
