@@ -15,6 +15,7 @@ import com.milktea.order.order.entity.OrderItem;
 import com.milktea.order.order.entity.OrderStatus;
 import com.milktea.order.order.mapper.OrderItemMapper;
 import com.milktea.order.order.mapper.OrderMapper;
+import com.milktea.order.order.vo.CounterOrderVo;
 import com.milktea.order.order.vo.OrderCreateVo;
 import com.milktea.order.order.vo.OrderItemVo;
 import com.milktea.order.order.vo.PayVo;
@@ -89,23 +90,57 @@ public class OrderService {
         // 实时计价：商品下架 / 规格非法会在此抛出 1002 / 1003 / 1001
         PricingResult priced = pricingService.calculatePrice(request.getItems());
 
+        AuthContext.Principal principal = AuthContext.get();
+        Order order = insertOrder(priced, Order.SOURCE_MINI_PROGRAM,
+                principal == null ? null : principal.getCustomerId(), request.getRemark(), false);
+
+        return toVo(order, priced);
+    }
+
+    /**
+     * 柜台人工点单（T14/T20，LLD 3.5 {@code POST /api/admin/counter-orders}）：
+     * 结构同顾客下单 items，创建即直接 PAID（收款当面完成）、分配取餐码、customer_id 为 NULL。
+     *
+     * <p>柜台为商家人工操作，不受「暂停接单」开关限制——该开关面向顾客端全渠道
+     * （SRS 4.6：开启后顾客端禁止新下单），存量订单与柜台服务不受影响。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CounterOrderVo createCounterOrder(OrderCreateRequest request) {
+        PricingResult priced = pricingService.calculatePrice(request.getItems());
+        Order order = insertOrder(priced, Order.SOURCE_COUNTER, null, request.getRemark(), true);
+        log.info("[T14] 柜台单创建成功 orderId={} orderNo={} pickupCode={} amount={}",
+                order.getId(), order.getOrderNo(), order.getPickupCode(), order.getTotalAmount());
+        return new CounterOrderVo(order.getId(), order.getOrderNo(), order.getPickupCode(),
+                MoneyUtils.format(order.getTotalAmount()));
+    }
+
+    /**
+     * 建单共性（订单号发放 + orders / order_item 落库，含规格快照）。
+     *
+     * @param paid true 表示创建即已支付（柜台单：同时分配取餐码并写支付字段）
+     */
+    private Order insertOrder(PricingResult priced, String source, Long customerId, String remark, boolean paid) {
         // 订单号统一由 T11 SequenceService 发放（daily_seq 行锁递增，同事务内取号）
         String orderNo = sequenceService.nextOrderNo();
         LocalDateTime now = LocalDateTime.now();
 
         Order order = new Order();
         order.setOrderNo(orderNo);
-        order.setSource(Order.SOURCE_MINI_PROGRAM);
-        order.setStatus(OrderStatus.PENDING_PAYMENT.name());
-        AuthContext.Principal principal = AuthContext.get();
-        order.setCustomerId(principal == null ? null : principal.getCustomerId());
+        order.setSource(source);
+        order.setStatus(paid ? OrderStatus.PAID.name() : OrderStatus.PENDING_PAYMENT.name());
+        order.setCustomerId(customerId);
         order.setTotalAmount(priced.getTotalAmount());
-        order.setRemark(request.getRemark());
+        order.setRemark(remark);
+        if (paid) {
+            // 柜台当面收款：创建即 PAID，直接分配取餐码（与小程序单共用当日流水）
+            order.setPickupCode(sequenceService.nextPickupCode());
+            order.setPayChannel(Order.PAY_CHANNEL_COUNTER);
+            order.setPaidAt(now);
+        }
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         orderMapper.insert(order);
 
-        List<OrderItem> items = new ArrayList<>(priced.getItems().size());
         for (PricedItem pi : priced.getItems()) {
             OrderItem oi = new OrderItem();
             oi.setOrderId(order.getId());
@@ -117,10 +152,8 @@ public class OrderService {
             oi.setUnitPrice(pi.getUnitPrice());
             oi.setItemAmount(pi.getItemAmount());
             orderItemMapper.insert(oi);
-            items.add(oi);
         }
-
-        return toVo(order, priced);
+        return order;
     }
 
     /**
@@ -141,10 +174,8 @@ public class OrderService {
         if (!Objects.equals(order.getCustomerId(), customerId)) {
             throw new BusinessException(ErrorCode.ORDER_NOT_BELONG);
         }
-        // 状态机校验：仅 PENDING_PAYMENT 可支付；重复支付/已关闭/已作废均为 1004
-        if (!OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())) {
-            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT);
-        }
+        // 状态机硬校验（T14，LLD 4.1）：仅 PENDING_PAYMENT 可支付成功；重复支付/已关闭/已作废均为 1004
+        OrderStateMachine.next(OrderStateMachine.parse(order.getStatus()), OrderStateMachine.Event.PAY_SUCCESS);
 
         // 策略支付（Mock 立即成功；真店切微信只改配置与实现）
         PayResult result = paymentService.pay(orderId, order.getTotalAmount());

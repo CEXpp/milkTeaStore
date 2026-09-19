@@ -22,6 +22,15 @@ public class Order {
     /** 来源渠道：小程序（LLD 2.2，另见 AI / COUNTER）。 */
     public static final String SOURCE_MINI_PROGRAM = "MINI_PROGRAM";
 
+    /** 来源渠道：柜台人工点单（T14/T20，创建即 PAID）。 */
+    public static final String SOURCE_COUNTER = "COUNTER";
+
+    /** 来源渠道：AI 点单（T32 草稿转订单）。 */
+    public static final String SOURCE_AI = "AI";
+
+    /** 支付渠道：柜台当面收款（不走 PaymentProvider，创建即 PAID 时写入）。 */
+    public static final String PAY_CHANNEL_COUNTER = "COUNTER";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
