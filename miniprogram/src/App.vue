@@ -1,24 +1,33 @@
 <script setup lang="ts">
-import { onLaunch, onShow, onHide } from '@dcloudio/uni-app'
+import { onLaunch } from '@dcloudio/uni-app'
+import { getActiveOrders } from '@/api/order'
 import { login } from '@/utils/request'
 
 /**
- * 应用入口（T24）：启动时静默登录换取顾客 JWT（LLD 8.3）。
- * 菜单等公开接口不依赖 token；下单 / 订单类接口需要时也会自动补登录（request 层兜底）。
+ * 应用入口：
+ * - T24：启动时静默登录换取顾客 JWT（LLD 8.3）；菜单等公开接口不依赖 token；
+ * - T27：再扫码进小程序时自动恢复进行中订单——存在进行中订单则定位到订单 Tab，
+ *   顾客可立刻看到取餐码与制作进度（LLD 8.2「再扫码进小程序自动恢复进行中订单」）。
  */
 onLaunch(() => {
-  login().catch(() => {
-    // 登录失败不阻塞启动：公开接口（菜单 / 门店状态）仍可浏览，下单时 request 层会重试登录
-  })
+  void restoreActiveOrders()
 })
 
-onShow(() => {
-  // 预留：切前台时刷新进行中订单（T27 订单页自身处理）
-})
-
-onHide(() => {
-  // 预留：切后台时停止轮询（各页面自行处理，见 T27）
-})
+async function restoreActiveOrders(): Promise<void> {
+  try {
+    await login()
+    const active = await getActiveOrders()
+    if (active.length) {
+      // 等首页渲染完成再切 Tab，避免与启动流程竞争
+      setTimeout(() => {
+        uni.switchTab({ url: '/pages/order/index' })
+      }, 300)
+    }
+  } catch {
+    // 登录失败或网络异常不阻塞启动：公开接口（菜单 / 门店状态）仍可浏览，
+    // 下单时 request 层会自动重试登录
+  }
+}
 </script>
 
 <style>
