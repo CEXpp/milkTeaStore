@@ -1,16 +1,62 @@
 {
 	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
 		{
-			"path": "pages/index/index",
+			"path": "pages/menu/index",
 			"style": {
-				"navigationBarTitleText": "uni-app"
+				"navigationBarTitleText": "点单"
+			}
+		},
+		{
+			"path": "pages/ai/index",
+			"style": {
+				"navigationBarTitleText": "AI 点单"
+			}
+		},
+		{
+			"path": "pages/order/index",
+			"style": {
+				"navigationBarTitleText": "我的订单"
+			}
+		},
+		{
+			// 购物车为菜单页浮动球入口（页面栈跳转，非 Tab，LLD 8.1）
+			"path": "pages/cart/index",
+			"style": {
+				"navigationBarTitleText": "购物车"
+			}
+		},
+		{
+			"path": "pages/order-detail/index",
+			"style": {
+				"navigationBarTitleText": "订单详情"
 			}
 		}
 	],
+	// TabBar 三项（LLD 8.1）：菜单 / AI 点单 / 订单；图标为模板占位（联调期替换正式图标）
+	"tabBar": {
+		"color": "#909399",
+		"selectedColor": "#409eff",
+		"backgroundColor": "#ffffff",
+		"borderStyle": "black",
+		"list": [
+			{
+				"pagePath": "pages/menu/index",
+				"text": "菜单"
+			},
+			{
+				"pagePath": "pages/ai/index",
+				"text": "AI 点单"
+			},
+			{
+				"pagePath": "pages/order/index",
+				"text": "订单"
+			}
+		]
+	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "uni-app",
+		"navigationBarTitleText": "奶茶在线点单",
 		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
+		"backgroundColor": "#F5F6F8"
 	}
 }
