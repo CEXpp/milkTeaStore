@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   fileUrl,
@@ -12,6 +11,7 @@ import {
   type Category,
   type SpecGroup
 } from '@/api/product'
+import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import ProductEditDrawer from '@/components/product/ProductEditDrawer.vue'
 
 /**
@@ -21,8 +21,6 @@ import ProductEditDrawer from '@/components/product/ProductEditDrawer.vue'
  * - 编辑抽屉：名称/描述/分类/基础价/排序/图片上传/适用规格组勾选（默认全选）；
  * - 上下架即时生效：下架后顾客端 GET /customer/menu 立即不含该商品（AC-08）。
  */
-
-const router = useRouter()
 
 const loading = ref(false)
 const products = ref<AdminProduct[]>([])
@@ -126,15 +124,9 @@ onMounted(() => {
 
 <template>
   <div class="products-page">
-    <header class="page-topbar">
-      <div class="topbar-left">
-        <el-button link type="primary" @click="router.push('/board')">← 返回看板</el-button>
-        <span class="page-title">商品管理</span>
-        <el-button link type="primary" @click="router.push('/categories')">分类管理</el-button>
-        <el-button link type="primary" @click="router.push('/specs')">规格模板</el-button>
-      </div>
+    <AdminPageHeader title="商品管理">
       <el-button type="primary" @click="openCreate">新建商品</el-button>
-    </header>
+    </AdminPageHeader>
 
     <main class="page-body">
       <div class="filter-bar">
@@ -242,31 +234,6 @@ onMounted(() => {
   min-height: 100%;
   padding: 16px;
   box-sizing: border-box;
-}
-
-.page-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-}
-
-.topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .page-body {
