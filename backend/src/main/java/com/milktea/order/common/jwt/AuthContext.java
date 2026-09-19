@@ -39,7 +39,9 @@ public final class AuthContext {
      * 与旧 {@code ThreadLocal} 未绑定时的语义保持一致。
      */
     public static Principal get() {
-        return CURRENT.orElse(null);
+        // 注意：不能用 CURRENT.orElse(null)——JDK 的 ScopedValue.orElse 对入参做 requireNonNull，
+        // 传 null 无论是否已绑定都会抛 NPE（JDK 25 实测）；isBound/get 组合才是「未绑定返回 null」的等价语义。
+        return CURRENT.isBound() ? CURRENT.get() : null;
     }
 
     /** 当前登录主体。 */

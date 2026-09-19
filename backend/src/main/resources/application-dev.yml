@@ -48,6 +48,10 @@ jwt:
 admin:
   initial-username: admin
   initial-password-hash: "$2a$10$0wPAHfMp1O5Y/lKPcp6mJ.O1bIDStGAZyKyMsUrQU7QwEc3jRwX8C"
+# 支付域（T12）：激活的支付渠道，取值对应 PaymentProvider.channel()（匹配不区分大小写）。
+# 练手期 mock；真店期新增 WechatPaymentProvider 实现后改为 wechat 即可，调用方代码零改动（LLD 5.1）
+payment:
+  active-channel: mock
 # 业务时区：订单号 yyMMdd 前缀与取餐码「自然日重置」的基准，须与门店所在地一致
 app:
   time-zone: Asia/Shanghai
