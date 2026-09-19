@@ -26,6 +26,13 @@
 			}
 		},
 		{
+			// 支付确认页（T26）：创建订单后进入，金额以后端为准
+			"path": "pages/pay-confirm/index",
+			"style": {
+				"navigationBarTitleText": "确认支付"
+			}
+		},
+		{
 			"path": "pages/order-detail/index",
 			"style": {
 				"navigationBarTitleText": "订单详情"
