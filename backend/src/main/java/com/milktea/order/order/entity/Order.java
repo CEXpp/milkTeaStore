@@ -11,13 +11,16 @@ import java.time.LocalDateTime;
 /**
  * 订单主表（orders，LLD 2.3 数据模型 / V1__init_schema.sql）。
  *
- * <p>字段与建表脚本一一对应：六状态、三渠道来源、支付与时间组。
- * 订单项快照在 order_item 表（T10 落地下单时写入）；本实体在 T12 中被
- * 支付编排读取，并以「条件更新」推进 PENDING_PAYMENT → PAID。</p>
+ * <p>字段与建表脚本一一对应：六状态（取值见 {@link OrderStatus}）、三渠道来源（{@link #SOURCE_MINI_PROGRAM} 等）、
+ * 支付与时间组。下单（T10）写入 PENDING_PAYMENT 订单与 order_item 规格快照；支付（T12）
+ * 以「条件更新」推进 PENDING_PAYMENT → PAID，并在同一事务内写入支付三字段与取餐码。</p>
  */
 @Data
 @TableName("orders")
 public class Order {
+
+    /** 来源渠道：小程序（LLD 2.2，另见 AI / COUNTER）。 */
+    public static final String SOURCE_MINI_PROGRAM = "MINI_PROGRAM";
 
     @TableId(type = IdType.AUTO)
     private Long id;

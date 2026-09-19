@@ -9,12 +9,13 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
- * 全局异常处理器（覆盖业务 / 校验 / 未知三类，对齐 LLD 3.1 / 3.2）。
+ * 全局异常处理器（覆盖业务 / 校验 / 上传超限 / 未知四类，对齐 LLD 3.1 / 3.2）。
  * <p>
  * 统一返回 {@link R}：所有响应 HTTP 状态均为 200，错误以 body 内 code 表达（见 LLD 3.1「0=成功，非 0=业务错误码」）。
- * 注：401/403 已在 {@link ErrorCode} 定义，但其处理归属鉴权任务，本处理器仅覆盖业务/校验/未知三类。
+ * 注：401/403 已在 {@link ErrorCode} 定义，但其处理归属鉴权任务，本处理器仅覆盖业务/校验/上传超限/未知四类。
  */
 @Slf4j
 @RestControllerAdvice
@@ -51,6 +52,14 @@ public class GlobalExceptionHandler {
     public <T> R<T> handleConstraint(ConstraintViolationException ex) {
         log.warn("[T04] ConstraintViolation: {}", ex.getMessage());
         return R.fail(ErrorCode.PARAM_ERROR.getCode(), ErrorCode.PARAM_ERROR.getMessage());
+    }
+
+    /** 上传超限（T08）：multipart 在解析阶段即被容器拒绝，统一映射为「图片大小超出限制」。 */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public <T> R<T> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        log.warn("[T08] Upload size exceeded: {}", ex.getMessage());
+        return R.fail(ErrorCode.FILE_TOO_LARGE.getCode(), ErrorCode.FILE_TOO_LARGE.getMessage());
     }
 
     /** 未知异常：code=500 服务器内部错误，记录完整堆栈。 */

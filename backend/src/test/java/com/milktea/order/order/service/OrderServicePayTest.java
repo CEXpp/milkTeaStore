@@ -7,6 +7,8 @@ import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderStatus;
 import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.vo.PayVo;
+import com.milktea.order.product.service.PricingService;
+import com.milktea.order.shop.mapper.ShopConfigMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -63,6 +66,13 @@ class OrderServicePayTest {
     private static final long CUSTOMER_A = 101L;
     private static final long CUSTOMER_B = 202L;
     private static final BigDecimal AMOUNT = new BigDecimal("17.00");
+
+    /** 支付链路不触及计价与店铺开关：Mock 补位，避免测试上下文引入商品 / 店铺域。 */
+    @MockitoBean
+    private PricingService pricingService;
+
+    @MockitoBean
+    private ShopConfigMapper shopConfigMapper;
 
     @Autowired
     private OrderService orderService;

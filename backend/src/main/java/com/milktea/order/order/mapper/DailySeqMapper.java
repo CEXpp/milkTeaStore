@@ -3,6 +3,7 @@ package com.milktea.order.order.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.milktea.order.order.entity.DailySeq;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -22,6 +23,12 @@ public interface DailySeqMapper extends BaseMapper<DailySeq> {
      */
     @Update("UPDATE daily_seq SET current_seq = current_seq + 1 WHERE seq_date = #{seqDate} AND seq_type = #{seqType}")
     int incrementSeq(@Param("seqDate") LocalDate seqDate, @Param("seqType") String seqType);
+  /**
+     * 首行插入（current_seq=0，供后续 increment 推成 1）。
+     */
+    @Insert("INSERT INTO daily_seq (seq_date, seq_type, current_seq) "
+            + "VALUES (#{date}, #{type}, 0)")
+    int insertRow(@Param("date") LocalDate date, @Param("type") String type);
 
     /**
      * 读取递增后的当前序号（须与 {@link #incrementSeq} 同一事务内执行）。
