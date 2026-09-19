@@ -5,6 +5,7 @@ import { createOrder } from '@/api/order'
 import { useCartStore } from '@/stores/cart'
 import { ApiError, CODE_SHOP_PAUSED, CODE_PRODUCT_UNAVAILABLE } from '@/utils/request'
 import { formatCents } from '@/utils/money'
+import { toCompactDateTime } from '@/utils/datetime'
 
 /**
  * 购物车页（T26，LLD 8.2）：
@@ -105,8 +106,11 @@ async function checkout(): Promise<void> {
       items: cart.toOrderItems(),
       remark: cart.orderRemark() || undefined
     })
-    // 注意：navigateTo 会自行编码 query，此处传原始值避免二次编码
-    uni.navigateTo({ url: `/pages/pay-confirm/index?id=${created.id}&expire=${created.expireAt}` })
+    // 支付截止时间用 14 位纯数字透传：时间串含空格 / 冒号，各端 URL 编解码层数与语义不一致
+    const expire = toCompactDateTime(created.expireAt)
+    uni.navigateTo({
+      url: `/pages/pay-confirm/index?id=${created.id}${expire ? `&expire=${expire}` : ''}`
+    })
   } catch (error) {
     await handleFailure(error)
   } finally {

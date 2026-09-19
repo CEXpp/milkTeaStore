@@ -5,6 +5,7 @@ import { getOrderDetail, payOrder, type OrderDetail } from '@/api/order'
 import { useCartStore } from '@/stores/cart'
 import { ApiError } from '@/utils/request'
 import { formatCents } from '@/utils/money'
+import { fromCompactDateTime } from '@/utils/datetime'
 
 /**
  * 支付确认页（T26，LLD 5.2「前端支付 UI 流三渠道统一」）：
@@ -16,25 +17,16 @@ import { formatCents } from '@/utils/money'
 const cart = useCartStore()
 
 const orderId = ref<number | null>(null)
-/** 支付截止时间（下单响应带回，详情接口不含该字段） */
+/** 支付截止时间（下单响应带回，14 位纯数字透传，详情接口不含该字段） */
 const expireAt = ref('')
 const order = ref<OrderDetail | null>(null)
 const loading = ref(true)
 const paying = ref(false)
 
-/** query 参数可能被平台编码过，安全解码（含非法 % 序列时原样返回） */
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
-
 onLoad((query) => {
   const id = Number(query?.id)
   orderId.value = Number.isFinite(id) && id > 0 ? id : null
-  expireAt.value = query?.expire ? safeDecode(String(query.expire)) : ''
+  expireAt.value = fromCompactDateTime(query?.expire ? String(query.expire) : '')
   void load()
 })
 
