@@ -48,7 +48,9 @@ jwt:
 admin:
   initial-username: admin
   initial-password-hash: "$2a$10$0wPAHfMp1O5Y/lKPcp6mJ.O1bIDStGAZyKyMsUrQU7QwEc3jRwX8C"
-# 跨域配置：允许的前端来源（逗号分隔）；未配置时默认放行全部（仅本地联调用）
+# 业务时区：订单号 yyMMdd 前缀与取餐码「自然日重置」的基准，须与门店所在地一致
 app:
+  time-zone: Asia/Shanghai
+  # 跨域配置：允许的前端来源（逗号分隔）；未配置时默认放行全部（仅本地联调用）
   cors:
     allowed-origins: "*"
