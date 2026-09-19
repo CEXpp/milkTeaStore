@@ -1,0 +1,195 @@
+# 单店奶茶点单系统 · 持续集成流水线
+#
+# 三端并行校验，每个 job 都按「依赖安装 → 代码检查 → 单元测试 → 构建验证」推进：
+#   backend      Spring Boot 4 / Maven / JDK 25（含 MySQL 8.0 服务容器，覆盖 Flyway 迁移与 @SpringBootTest）
+#   admin-web    Vue 3 / Vite 8 / TypeScript
+#   miniprogram  uni-app（微信小程序构建产物）
+#
+# 后端 application-dev.yml 默认连开发机的外网库，CI 通过环境变量把数据源指向本次运行的
+# MySQL 服务容器，使流水线自包含、不依赖任何外部环境。
+
+name: CI
+
+on:
+  # 主干与长期分支的提交
+  push:
+    branches: [main, cph, dsh]
+  # 任意目标分支的 PR
+  pull_request:
+  # 支持手动重跑，便于排查偶发失败
+  workflow_dispatch:
+
+# 最小权限：流水线只读取仓库内容
+permissions:
+  contents: read
+
+# 同一分支仅保留最新一次运行：推入新提交时取消尚未完成的旧任务
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 后端：编译检查 → 单元测试 → 打包验证
+  # ---------------------------------------------------------------------------
+  backend:
+    name: backend · JDK 25 / Maven
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # @SpringBootTest 启动上下文需要真实数据库；Flyway 会在启动时执行 db/migration 下的迁移脚本
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: milk_tea
+          TZ: Asia/Shanghai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -proot --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # 覆盖 application-dev.yml 中的外网库地址，指向上面的服务容器
+      SPRING_DATASOURCE_URL: "jdbc:mysql://127.0.0.1:3306/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven # 缓存 ~/.m2/repository
+
+      - name: 准备 Maven Wrapper
+        working-directory: backend
+        run: chmod +x ./mvnw # 仓库中 mvnw 未带可执行位，Linux 上需补上
+
+      - name: 依赖安装与代码检查（编译）
+        working-directory: backend
+        run: ./mvnw -B -ntp -DskipTests compile
+
+      - name: 单元测试
+        working-directory: backend
+        run: ./mvnw -B -ntp test
+
+      - name: 构建验证（打包可运行 jar）
+        working-directory: backend
+        run: ./mvnw -B -ntp -DskipTests package
+
+      - name: 上传测试报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/*.jar
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 管理后台：类型检查 → 单元测试 → 生产构建
+  # ---------------------------------------------------------------------------
+  admin-web:
+    name: admin-web · Vue 3 / Vite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: admin-web
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 代码检查（TypeScript 类型）
+        run: npm run type-check
+
+      # 仓库尚未接入前端测试框架；--if-present 保证管线不因此失败，后续补齐 Vitest 后自动生效
+      - name: 单元测试
+        run: npm test --if-present
+
+      - name: 构建验证
+        run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-web-dist
+          path: admin-web/dist/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 小程序：依赖安装 → 微信小程序构建（uni-app 编译期即可暴露类型与资源错误）
+  # ---------------------------------------------------------------------------
+  miniprogram:
+    name: miniprogram · uni-app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: miniprogram
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniprogram/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 代码检查（TypeScript 类型）
+        run: npm run type-check
+
+      # 仓库尚未接入前端测试框架；--if-present 保证管线不因此失败，后续补齐 Vitest 后自动生效
+      - name: 单元测试
+        run: npm test --if-present
+
+      - name: 构建验证（微信小程序）
+        run: npm run build:mp-weixin
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniprogram-dist
+          path: miniprogram/dist/build/mp-weixin/
+          if-no-files-found: ignore
+          retention-days: 7

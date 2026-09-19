@@ -6,10 +6,11 @@ docx2md.py —— 把 .docx 转成结构化的、对 AI 友好的 Markdown。
 设计目标：
   1. 内容零丢失：正文、标题层级、表格、图片、目录、脚注全部保留。
   2. 低 token：去掉装饰性空段落、图片二进制、页眉页脚样板、重复 TOC 页码字段。
-  3. 结构可读：标题用 # 层级，表格用 GFM 表格，图片抽到 assets/ 并写成相对引用。
+  3. 结构可读：标题用 # 层级，表格用 GFM 表格，图片抽到 assets/ 并写成相对引用，
+     等宽字体单列「代码框」还原为围栏代码块（保留空行与缩进）。
 
 用法：
-  python docx2md.py <input.docx> [-o out.md] [--assets-dir 名字] [--no-assets]
+  python docx2md.py <input.docx> [-o out.md] [--assets-dir 名字] [--no-assets] [--no-fence-code]
 
 仅依赖 Python 标准库。
 """
@@ -88,12 +89,14 @@ def has_child(el, tag):
 
 
 class Converter:
-    def __init__(self, docx_path, assets_dir_name="assets", extract_assets=True):
+    def __init__(self, docx_path, assets_dir_name="assets", extract_assets=True,
+                 fence_code=True):
         self.docx_path = docx_path
         self.z = zipfile.ZipFile(docx_path)
         self.rels = self._load_rels("word/_rels/document.xml.rels")
         self.assets_dir_name = assets_dir_name
         self.extract_assets = extract_assets
+        self.fence_code = fence_code
         self.assets = []          # 已提取的图片 [(rel_id, out_relpath, media_name)]
         self.media_written = {}
         self.image_seq = 0
@@ -285,6 +288,40 @@ class Converter:
         return ""
 
     # ---------- 段落 ----------
+    @staticmethod
+    def content_nodes(node):
+        """按文档顺序遍历段落正文节点，跳过 pPr（内含制表位定义，不是正文分隔符）。"""
+        for ch in node:
+            if ch.tag == W + "pPr":
+                continue
+            yield ch
+            for sub in Converter.content_nodes(ch):
+                yield sub
+
+    def toc_entry(self, p, style):
+        """目录条目 = [标题文字][制表位][PAGEREF 页码]，整体是内部书签链接。"""
+        anchor = None
+        for h in p.iter(W + "hyperlink"):
+            a = h.get(W + "anchor")
+            if a:
+                anchor = a
+                break
+        pre, post, seen_tab = [], [], False
+        for node in self.content_nodes(p):
+            if node.tag == W + "tab":
+                seen_tab = True
+            elif node.tag == W + "t":
+                (post if seen_tab else pre).append(node.text or "")
+        title = re.sub(r"\s+", " ", "".join(pre)).strip()
+        if not title:
+            return ""
+        page = "".join(post).strip()
+        item = "[%s](#%s)" % (title, anchor) if anchor else title
+        if page:
+            item += " " + page          # 页码是自动域，一并保留
+        self.stats["toc"] += 1
+        return "%s- %s" % ("  " * (TOC_STYLE[style] - 1), item)
+
     def paragraph(self, p):
         ppr = p.find(W + "pPr")
         style = None
@@ -292,6 +329,15 @@ class Converter:
             ps = ppr.find(W + "pStyle")
             if ps is not None:
                 style = ps.get(W + "val")
+
+        # 目录条目
+        if style in TOC_STYLE:
+            return self.toc_entry(p, style)
+
+        # 段落自带书签（标题锚点）：输出 HTML 锚点，供目录链接跳转
+        marks = [(bs.get(W + "name") or "") for bs in p.findall(W + "bookmarkStart")]
+        marks = [m for m in marks if m and not m.startswith("_GoBack")]
+
         body = self.inline(p, None)
         body = re.sub(r"\n{3,}", "\n\n", body).strip()
         body = tidy(body)
@@ -303,24 +349,24 @@ class Converter:
         # 手工项目符号 -> markdown 列表
         body = re.sub(r"^[•·▪◦]\s*", "- ", body)
 
-        # 目录条目
-        if style in TOC_STYLE:
-            indent = "  " * (TOC_STYLE[style] - 1)
-            body = re.sub(r"\s*\d+\s*$", "", body).strip()  # 去掉页码
-            if not body:
-                return ""
-            self.stats["toc"] += 1
-            return "%s- %s" % (indent, body)
-
         if style in HEADING_STYLE:
             body = strip_marks(body)
             if not body:
                 return ""
             level = len(HEADING_STYLE[style])
             self.stats["heading%d" % level] += 1
-            return "%s %s" % ("#" * level, body)
+            head = "%s %s" % ("#" * level, body)
+            if marks:
+                self.stats["anchor"] += len(marks)
+                tags = "".join('<a id="%s"></a>' % m for m in marks)
+                # HTML 块需空行收尾，后面的标题才不会被吞进去
+                return "%s\n\n%s" % (tags, head)
+            return head
 
         self.stats["para"] += 1
+        if marks:
+            self.stats["anchor"] += len(marks)
+            return "".join('<a id="%s"></a>' % m for m in marks) + "\n\n" + body
         return body
 
     # ---------- 表格 ----------
@@ -388,6 +434,64 @@ class Converter:
             lines.append("| " + " | ".join(r) + " |")
         return "\n".join(lines)
 
+    # ---------- 代码框（等宽单列表格） ----------
+    def is_code_table(self, tbl):
+        """单行单列、且正文全部是等宽字体的表格 —— Word 里的「代码框」。"""
+        trs = tbl.findall(W + "tr")
+        if len(trs) != 1:
+            return False
+        if len(trs[0].findall(W + "tc")) != 1:
+            return False
+        fonts = set()
+        for rpr in tbl.iter(W + "rPr"):
+            f = rpr.find(W + "rFonts")
+            if f is None:
+                continue
+            name = ((f.get(W + "ascii") or "") + (f.get(W + "hAnsi") or "")).strip()
+            if name:
+                fonts.add(name)
+        if not fonts:
+            return False
+        return all(re.search(r"consol|mono|courier|code", n, re.I) for n in fonts)
+
+    def code_block(self, tbl):
+        """原样取出代码行：保空白、保缩进、保空行，围栏包裹。"""
+        lines = []
+        for p in tbl.iter(W + "p"):
+            buf = []
+            for node in p.iter():
+                if node.tag == W + "t":
+                    buf.append(node.text or "")
+                elif node.tag == W + "tab":
+                    buf.append("    ")
+                elif node.tag == W + "br":
+                    buf.append("\n")
+            lines.append("".join(buf))
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if not lines:
+            return ""
+        text = "\n".join(l.replace("\u00a0", " ").rstrip() for l in lines)
+        self.stats["codeblock"] += 1
+        return "```%s\n%s\n```" % (self.detect_lang(text), text)
+
+    @staticmethod
+    def detect_lang(t):
+        """按内容猜语言，仅用于代码高亮，不影响文字本身。"""
+        if re.search(r"^\s*(CREATE\s+TABLE|ALTER\s+TABLE|INSERT\s+INTO|SELECT\s)\b",
+                     t, re.M | re.I):
+            return "sql"
+        if re.search(r"^\s*(services|version|volumes|networks)\s*:\s*$", t, re.M) or \
+           re.search(r"^\s*spring\s*:", t, re.M):
+            return "yaml"
+        if re.search(r"^\s*(@\w+|public|private|protected|class\s|interface\s)", t, re.M):
+            return "java"
+        if re.match(r"\s*[\[{]", t):
+            return "json"
+        return "text"
+
     # ---------- 封面 ----------
     def render_cover(self, lines):
         """把封面版式表格渲染成「H1 + 引用块」，文字一条不丢。"""
@@ -442,7 +546,11 @@ class Converter:
             elif ch.tag == W + "tbl":
                 trs = ch.findall(W + "tr")
                 cols = len(trs[0].findall(W + "tc")) if trs else 0
-                if cols <= 1:
+                if cols <= 1 and self.fence_code and self.is_code_table(ch):
+                    t = self.code_block(ch)
+                    if t:
+                        blocks.append(t)
+                elif cols <= 1:
                     # 版式表格（封面/整页底色块）：取其中段落另作封面处理
                     lines = []
                     for p in ch.iter(W + "p"):
@@ -524,11 +632,14 @@ def main():
     ap.add_argument("--assets-dir", default=None,
                     help="图片目录名，默认取「输出文件名.assets」，避免多份文档互相覆盖")
     ap.add_argument("--no-assets", action="store_true")
+    ap.add_argument("--no-fence-code", action="store_true",
+                    help="不要把等宽单列表格转成围栏代码块")
     a = ap.parse_args()
 
     out_md = a.output or os.path.splitext(a.input)[0] + ".md"
     adir = a.assets_dir or (os.path.basename(os.path.splitext(out_md)[0]) + ".assets")
-    c = Converter(a.input, assets_dir_name=adir, extract_assets=not a.no_assets)
+    c = Converter(a.input, assets_dir_name=adir, extract_assets=not a.no_assets,
+                  fence_code=not a.no_fence_code)
     md = c.convert()
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(md)
