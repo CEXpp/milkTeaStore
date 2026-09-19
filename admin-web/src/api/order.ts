@@ -36,11 +36,13 @@ export interface BoardPreparingOrder {
   minutesPreparing: number
 }
 
-/** 看板今日摘要 */
+/** 看板今日摘要（T14 起为四数：营业额/订单数/杯数/退款额，口径 SRS 6.5） */
 export interface BoardTodaySummary {
   orderCount: number
   amount: string
   cupCount: number
+  /** 当日作废单实付合计（单独列示，不并入营业额） */
+  refundAmount: string
 }
 
 /** GET /api/admin/orders/board 响应 data */
