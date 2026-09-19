@@ -12,11 +12,12 @@ import com.milktea.order.order.dto.PricedItem;
 import com.milktea.order.order.dto.PricingResult;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderItem;
-import com.milktea.order.order.mapper.DailySeqMapper;
+import com.milktea.order.order.entity.OrderStatus;
 import com.milktea.order.order.mapper.OrderItemMapper;
 import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.vo.OrderCreateVo;
 import com.milktea.order.order.vo.OrderItemVo;
+import com.milktea.order.payment.PaymentService;
 import com.milktea.order.product.service.PricingService;
 import com.milktea.order.shop.entity.ShopConfig;
 import com.milktea.order.shop.mapper.ShopConfigMapper;
@@ -32,19 +33,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -55,13 +50,14 @@ import static org.mockito.Mockito.when;
  * OrderService 下单事务单元测试（不依赖数据库）。
  *
  * <p>覆盖：正常下单（快照 / 合计 / 订单号 / expireAt）、暂停接单 1006 不落库、
- * 当日首单 daily_seq INSERT 后重试、计价失败不落库、orderNo 与 expireAt 格式。</p>
+ * 订单号经 T11 SequenceService 统一发放、计价失败不落库、orderNo 与 expireAt 格式。</p>
  */
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyMMdd");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    /** SequenceService 发放的订单号（真实实现为 yyMMdd + 5 位序列）。 */
+    private static final String ORDER_NO = "26091200001";
 
     @Mock
     private PricingService pricingService;
@@ -70,9 +66,11 @@ class OrderServiceTest {
     @Mock
     private OrderItemMapper orderItemMapper;
     @Mock
-    private DailySeqMapper dailySeqMapper;
+    private SequenceService sequenceService;
     @Mock
     private ShopConfigMapper shopConfigMapper;
+    @Mock
+    private PaymentService paymentService;
 
     @InjectMocks
     private OrderService orderService;
@@ -134,8 +132,7 @@ class OrderServiceTest {
     void createOrderNormal() {
         when(shopConfigMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(openConfig());
         when(pricingService.calculatePrice(any(List.class))).thenReturn(samplePricing());
-        when(dailySeqMapper.increment(any(LocalDate.class), eq(DailySeqMapper.TYPE_ORDER_NO))).thenReturn(1);
-        when(dailySeqMapper.selectCurrent(any(LocalDate.class), eq(DailySeqMapper.TYPE_ORDER_NO))).thenReturn(1);
+        when(sequenceService.nextOrderNo()).thenReturn(ORDER_NO);
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         stubOrderInsertCapturing(orderCaptor);
@@ -143,14 +140,14 @@ class OrderServiceTest {
         OrderCreateVo vo = orderService.createOrder(sampleRequest());
 
         Order saved = orderCaptor.getValue();
-        assertEquals(Order.STATUS_PENDING_PAYMENT, saved.getStatus());
+        assertEquals(OrderStatus.PENDING_PAYMENT.name(), saved.getStatus());
         assertEquals(Order.SOURCE_MINI_PROGRAM, saved.getSource());
         assertEquals(new BigDecimal("17.00"), saved.getTotalAmount());
         assertEquals("口味偏淡", saved.getRemark());
 
         assertEquals(3001L, vo.id());
-        assertEquals(LocalDate.now().format(DATE_FMT) + "00001", vo.orderNo());
-        assertEquals(Order.STATUS_PENDING_PAYMENT, vo.status());
+        assertEquals(ORDER_NO, vo.orderNo());
+        assertEquals(OrderStatus.PENDING_PAYMENT.name(), vo.status());
         assertEquals("17.00", vo.totalAmount());
 
         String expectedExpire = saved.getCreatedAt().plusMinutes(15).format(DATETIME_FMT);
@@ -183,22 +180,20 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("当日首单：increment 返回 0 则 INSERT 后重试，序列从 1 开始")
-    void dailySeqFirstInsertThenRetry() {
+    @DisplayName("订单号统一经 SequenceService 发放（下单不再直连 daily_seq）")
+    void orderNoIssuedBySequenceService() {
         when(shopConfigMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(openConfig());
         when(pricingService.calculatePrice(any(List.class))).thenReturn(samplePricing());
-        // 第一次 increment=0（无行），insertRow 后第二次 increment=1
-        when(dailySeqMapper.increment(any(LocalDate.class), eq(DailySeqMapper.TYPE_ORDER_NO)))
-                .thenReturn(0).thenReturn(1);
-        when(dailySeqMapper.selectCurrent(any(LocalDate.class), eq(DailySeqMapper.TYPE_ORDER_NO))).thenReturn(1);
+        when(sequenceService.nextOrderNo()).thenReturn(ORDER_NO);
 
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         stubOrderInsertCapturing(captor);
 
         OrderCreateVo vo = orderService.createOrder(sampleRequest());
 
-        verify(dailySeqMapper, times(1)).insertRow(any(LocalDate.class), eq(DailySeqMapper.TYPE_ORDER_NO));
-        assertEquals(LocalDate.now().format(DATE_FMT) + "00001", vo.orderNo());
+        verify(sequenceService, times(1)).nextOrderNo();
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(ORDER_NO, vo.orderNo());
     }
 
     @Test
@@ -212,7 +207,7 @@ class OrderServiceTest {
 
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
-        verify(dailySeqMapper, never()).increment(any(LocalDate.class), any());
+        verify(sequenceService, never()).nextOrderNo();
     }
 
     private static ShopConfig openConfig() {
