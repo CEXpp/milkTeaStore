@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { completeOrder, getOrderBoard, startOrder, voidOrder, type OrderBoardResult } from '@/api/order'
+import { getShopStatus, updateShopPause } from '@/api/shop'
 import { useAuthStore } from '@/stores/auth'
 import { playDing, unlockDing } from '@/utils/ding'
 import OrderCard from '@/components/board/OrderCard.vue'
@@ -13,12 +14,16 @@ import StatBar from '@/components/board/StatBar.vue'
  * - 双分区（待制作 / 制作中）+ 顶栏今日概览四数；
  * - 3 秒轮询 board 接口：比对前后 pending 的 orderId 差集，新增时播提示音并高亮 30 秒；
  * - 行内操作：开始制作 / 出餐（成功后立即刷新、卡片迁移分区）；作废二次确认且必填原因（仅 PAID 卡片）；
- * - visibilitychange：页面切后台暂停轮询省流量，切回立即刷新一次并恢复。
+ * - visibilitychange：页面切后台暂停轮询省流量，切回立即刷新一次并恢复；
+ * - 暂停接单开关（T23）：顶栏 Switch 一键切换，开启后黄条横幅 + 顾客端 paused=true；
+ *   已下单的订单不受影响，看板照常流转。
  */
 
 const POLL_INTERVAL_MS = 3000
 /** 新单高亮时长（任务卡：新卡片高亮 30 秒） */
 const HIGHLIGHT_DURATION_MS = 30_000
+/** 暂停接单时写入的顾客端提示语（LLD 3.5.5 的 notice 字段） */
+const DEFAULT_PAUSE_NOTICE = '高峰期制作中，稍后开放点单'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -26,6 +31,11 @@ const authStore = useAuthStore()
 const board = ref<OrderBoardResult | null>(null)
 const highlightedIds = ref<number[]>([])
 const busyIds = ref<number[]>([])
+
+/** 暂停接单开关状态（T23） */
+const paused = ref(false)
+const pauseNotice = ref<string | null>(null)
+const pauseBusy = ref(false)
 
 let pollTimer: number | null = null
 /** 上一轮 pending 的 orderId 集合；null 表示首轮加载（首屏不播提示音、不高亮） */
@@ -125,6 +135,36 @@ function handleVoid(orderId: number): void {
     })
 }
 
+/** 读取门店营业状态：开关初始值 + 顾客端提示语。 */
+async function loadShopStatus(): Promise<void> {
+  try {
+    const status = await getShopStatus()
+    paused.value = status.paused
+    pauseNotice.value = status.notice
+  } catch {
+    // 错误提示已由 request 层直显
+  }
+}
+
+/**
+ * 切换暂停接单：成功后以服务端返回为准；失败回到服务端真值（避免开关状态与后端不一致）。
+ * 已下单的订单不受影响——暂停只拦截顾客端「创建订单」入口（LLD 3.5.5）。
+ */
+async function handlePauseChange(value: string | number | boolean): Promise<void> {
+  const next = Boolean(value)
+  pauseBusy.value = true
+  try {
+    const result = await updateShopPause({ paused: next, notice: next ? DEFAULT_PAUSE_NOTICE : undefined })
+    paused.value = result.paused
+    pauseNotice.value = next ? DEFAULT_PAUSE_NOTICE : pauseNotice.value
+    ElMessage.success(next ? '已暂停接单：顾客端无法下单' : '已恢复接单')
+  } catch {
+    await loadShopStatus()
+  } finally {
+    pauseBusy.value = false
+  }
+}
+
 async function handleLogout(): Promise<void> {
   try {
     await ElMessageBox.confirm('确定退出登录吗？', '提示', { type: 'warning' })
@@ -139,6 +179,7 @@ onMounted(() => {
   // 解锁 Web Audio 自动播放（新单提示音依赖用户手势后的 AudioContext）
   unlockDing()
   void refreshBoard()
+  void loadShopStatus()
   startPolling()
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
@@ -159,11 +200,28 @@ onBeforeUnmount(() => {
         <StatBar :today="board?.today ?? null" />
       </div>
       <div class="topbar-right">
+        <div class="pause-switch">
+          <span class="pause-label" :class="{ paused }">{{ paused ? '暂停接单中' : '正常接单' }}</span>
+          <el-switch
+            v-model="paused"
+            :loading="pauseBusy"
+            :disabled="pauseBusy"
+            @change="handlePauseChange"
+          />
+        </div>
         <el-button class="counter-entry" type="primary" plain @click="router.push('/counter')">柜台点单</el-button>
+        <el-button class="products-entry" plain @click="router.push('/products')">商品管理</el-button>
         <span class="board-user">{{ authStore.nickname || '店长' }}</span>
         <el-button link type="primary" @click="handleLogout">退出登录</el-button>
       </div>
     </header>
+
+    <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转 -->
+    <div v-if="paused" class="pause-banner">
+      已暂停接单：顾客端无法新增下单（下单返回 1006）
+      <span v-if="pauseNotice">· {{ pauseNotice }}</span>
+      ；进行中订单不受影响，可照常制作与出餐。
+    </div>
 
     <main class="board-columns">
       <section class="board-column">
@@ -238,14 +296,38 @@ onBeforeUnmount(() => {
 .topbar-right {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
-.counter-entry {
-  margin-right: 12px;
+.pause-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+  border-right: 1px solid #ebeef5;
+}
+
+.pause-label {
+  font-size: 13px;
+  color: #67c23a;
+}
+
+.pause-label.paused {
+  font-weight: 600;
+  color: #e6a23c;
+}
+
+.pause-banner {
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #b88230;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  border-radius: 8px;
 }
 
 .board-user {
-  margin-right: 12px;
   color: #606266;
 }
 
