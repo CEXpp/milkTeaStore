@@ -1,6 +1,7 @@
 {
   "appid": "wx07d0076104f22881",
   "compileType": "miniprogram",
+  "miniprogramRoot": "dist/dev/mp-weixin/",
   "libVersion": "3.17.3",
   "packOptions": {
     "ignore": [],
