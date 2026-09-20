@@ -19,6 +19,11 @@ const routes: RouteRecordRaw[] = [
     name: 'board',
     component: () => import('@/views/Board.vue')
   },
+  {
+    path: '/counter',
+    name: 'counter',
+    component: () => import('@/views/Counter.vue')
+  },
   { path: '/:pathMatch(.*)*', redirect: '/board' }
 ]
 

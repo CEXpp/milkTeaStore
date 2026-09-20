@@ -1,5 +1,8 @@
 package com.milktea.order.order.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.milktea.order.order.entity.DailySeq;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -8,23 +11,19 @@ import org.apache.ibatis.annotations.Update;
 import java.time.LocalDate;
 
 /**
- * 每日流水（daily_seq）行锁递增，见 LLD 4.2。
- *
- * <p>取订单号：UPDATE 影响 0 行则 INSERT 新行（current_seq=0）后重试一次，
- * 全程在创建订单的事务内完成；seq_date 维度天然按自然日重开新行。</p>
+ * 每日流水访问（LLD 2.4 / 4.2 行锁方案）：UPDATE 行锁递增 → 同事务内 SELECT 取值。
  */
-public interface DailySeqMapper {
-
-    String TYPE_ORDER_NO = "ORDER_NO";
+@Mapper
+public interface DailySeqMapper extends BaseMapper<DailySeq> {
 
     /**
-     * 行锁递增：命中则 current_seq+1，返回受影响行数（0 表示当天该类型尚无行）。
+     * 行锁递增：命中一行即持有该行写锁直到事务提交——同 (seq_date, seq_type) 的取号串行化，天然防重号。
+     *
+     * @return 影响行数；0 表示当日该类型尚无流水行
      */
-    @Update("UPDATE daily_seq SET current_seq = current_seq + 1 "
-            + "WHERE seq_date = #{date} AND seq_type = #{type}")
-    int increment(@Param("date") LocalDate date, @Param("type") String type);
-
-    /**
+    @Update("UPDATE daily_seq SET current_seq = current_seq + 1 WHERE seq_date = #{seqDate} AND seq_type = #{seqType}")
+    int incrementSeq(@Param("seqDate") LocalDate seqDate, @Param("seqType") String seqType);
+  /**
      * 首行插入（current_seq=0，供后续 increment 推成 1）。
      */
     @Insert("INSERT INTO daily_seq (seq_date, seq_type, current_seq) "
@@ -32,8 +31,8 @@ public interface DailySeqMapper {
     int insertRow(@Param("date") LocalDate date, @Param("type") String type);
 
     /**
-     * 读取当前序列值。
+     * 读取递增后的当前序号（须与 {@link #incrementSeq} 同一事务内执行）。
      */
-    @Select("SELECT current_seq FROM daily_seq WHERE seq_date = #{date} AND seq_type = #{type}")
-    Integer selectCurrent(@Param("date") LocalDate date, @Param("type") String type);
+    @Select("SELECT current_seq FROM daily_seq WHERE seq_date = #{seqDate} AND seq_type = #{seqType}")
+    Integer selectCurrentSeq(@Param("seqDate") LocalDate seqDate, @Param("seqType") String seqType);
 }

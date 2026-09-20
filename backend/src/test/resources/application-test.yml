@@ -1,0 +1,24 @@
+# 单测专用 profile（src/test/resources，不进产物）：用内存 H2 替换 dev 的 MySQL，
+# 避免 SequenceServiceTest 依赖外部容器与 dev 密钥。
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    # MODE=MySQL 贴近生产方言；LOCK_TIMEOUT 放宽以容纳 50 线程抢同一行的等待
+    url: jdbc:h2:mem:sequence-test;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000
+    username: sa
+    password: ""
+    hikari:
+      # 并发取号 50 线程各占一条连接，池必须放大
+      maximum-pool-size: 60
+  flyway:
+    # V1/V2 是 MySQL 脚本，单测不参与迁移，表结构由测试类自建
+    enabled: false
+  sql:
+    init:
+      mode: never
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+logging:
+  level:
+    com.milktea.order.order: debug

@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
-public class  PricingService {
+public class PricingService {
 
     private static final int ENABLED = 1;
     private static final int SCALE = 2;
