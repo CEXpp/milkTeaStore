@@ -67,3 +67,19 @@ app:
 # 订单（T10）：支付期限（分钟），下单响应 expireAt = createdAt + 该值（LLD 3.3 / 4.2）
 order:
   payment-timeout-minutes: 15
+# AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
+ai:
+  # GLM 的 OpenAI 兼容端点（LLD 6.2）
+  base-url: https://open.bigmodel.cn/api/paas/v4
+  # 密钥一律走环境变量，不入库不入前端（排期附录 A 指定变量名 AI_API_KEY）
+  api-key: "${AI_API_KEY:}"
+  model: glm-4-flash
+  # 点单场景求稳定不求发散（LLD 6.2）
+  temperature: 0.2
+  # 单次响应超时（秒）：SRS 5.5「模型单次响应超过 10 秒视为超时」
+  # 注：LLD 6.2 写作 20 秒，与 SRS 5.5 冲突，本任务按需求基线取 10（见 docs/T29-AI基础设施实施方案.md 冲突 C4）
+  timeout-seconds: 10
+  # 记忆窗口消息数：20 条 ≈ 10 轮问答（T29 卡 / HLD「10 轮记忆」）
+  max-messages: 20
+  # 会话无活动过期时长（分钟）：LLD 6.5 / HLD
+  session-timeout-minutes: 30

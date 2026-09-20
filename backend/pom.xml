@@ -29,7 +29,24 @@
     <properties>
         <java.version>25</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <!-- LangChain4j（T29）：GA 轨版本；1.20.0 的 BOM 中 stable.version=1.20.0、beta.version=1.20.0-beta30，
+             本项目仅用 stable 轨模块（langchain4j / langchain4j-open-ai），不引 beta 轨的 spring-boot4-starter -->
+        <langchain4j.version>1.20.0</langchain4j.version>
     </properties>
+
+    <!-- LangChain4j BOM：统一管理 stable 轨模块版本，避免逐模块写版本号 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- Flyway 引擎 -->
         <dependency>
@@ -108,6 +125,17 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!-- LangChain4j 核心（T29）：AiServices / ChatMemory / ChatMemoryStore / ChatMessage 序列化 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
+        <!-- LangChain4j 的 OpenAI 兼容协议实现（T29）：GLM 经此通道接入，OpenAiChatModel 由 LLD 6.2 装配 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
 
         <dependency>
