@@ -1,6 +1,7 @@
 package com.milktea.order.ai.session;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.milktea.order.ai.mapper.AiSessionMapper;
 import com.milktea.order.common.exception.BusinessException;
 import com.milktea.order.common.exception.ErrorCode;
@@ -18,8 +19,10 @@ import java.util.UUID;
 /**
  * AI 会话生命周期服务（T29，LLD 6.5「AiSessionService 会话生命周期与草稿单管理」）。
  *
- * <p>职责：会话定位/新建、归属校验、活动续期、过期草稿惰性清理。消息历史的读写由
- * {@link ChatMemoryStoreImpl} 承担，草稿单内容的增改由 T30 的工具集承担。</p>
+ * <p>职责：会话定位/新建、归属校验、活动续期、过期草稿惰性清理、草稿单存取（LLD 6.1
+ * 「AiSessionService 会话生命周期与草稿单管理」）。消息历史的读写由
+ * {@link ChatMemoryStoreImpl} 承担；草稿单的<b>内容语义</b>（商品/规格校验、计价、覆盖或追加）
+ * 由 T30 的工具集承担，本服务只负责 {@code draft_items} 列的读写。</p>
  */
 @Slf4j
 @Service
@@ -68,6 +71,63 @@ public class SessionService {
             }
         }
         return create(customerId);
+    }
+
+    /**
+     * 读会话草稿单（{@code ai_session.draft_items} 原始 JSON）。
+     *
+     * <p>只做存储职责、不解释内容：草稿单的增改语义（商品校验、计价、覆盖/追加）由 T30 的工具集承担，
+     * 本方法只按 {@code session_uuid} 取列值。</p>
+     *
+     * @param sessionUuid 会话标识（即 {@code @MemoryId}）
+     * @return 草稿单 JSON；会话不存在或无草稿时返回 {@code null}
+     */
+    public String readDraft(String sessionUuid) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return null;
+        }
+        AiSessionEntity session = aiSessionMapper.selectOne(
+                new LambdaQueryWrapper<AiSessionEntity>()
+                        .eq(AiSessionEntity::getSessionUuid, sessionUuid));
+        return session == null ? null : session.getDraftItems();
+    }
+
+    /**
+     * 覆盖写会话草稿单（整份 JSON 覆盖语义，与 MemoryWindow 的整窗覆盖一致）。
+     *
+     * @param sessionUuid 会话标识
+     * @param draftJson   草稿单 JSON
+     * @return 是否命中会话（{@code false} 表示会话不存在或已被清理）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean writeDraft(String sessionUuid, String draftJson) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return false;
+        }
+        return aiSessionMapper.update(null, new LambdaUpdateWrapper<AiSessionEntity>()
+                .set(AiSessionEntity::getDraftItems, draftJson)
+                .set(AiSessionEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(AiSessionEntity::getSessionUuid, sessionUuid)) > 0;
+    }
+
+    /**
+     * 清空会话草稿单（置 {@code draft_items = NULL}）。
+     *
+     * <p>必须用 {@code UpdateWrapper.set(...)} 显式置空：MyBatis-Plus 默认更新策略会忽略 null 字段，
+     * 走实体更新的写法无法把列写回 NULL。</p>
+     *
+     * @param sessionUuid 会话标识
+     * @return 是否命中会话
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean clearDraft(String sessionUuid) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return false;
+        }
+        return aiSessionMapper.update(null, new LambdaUpdateWrapper<AiSessionEntity>()
+                .set(AiSessionEntity::getDraftItems, null)
+                .set(AiSessionEntity::getUpdatedAt, LocalDateTime.now())
+                .eq(AiSessionEntity::getSessionUuid, sessionUuid)) > 0;
     }
 
     /**

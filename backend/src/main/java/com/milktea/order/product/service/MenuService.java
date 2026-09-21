@@ -98,6 +98,38 @@ public class MenuService {
     }
 
     /**
+     * 按关键词检索在售商品（T30 AI {@code searchMenu} / {@code updateDraftOrder} 复用同一读链路）。
+     *
+     * <p>与 {@link #getMenu()} 同源同口径：只返回 {@code status=1} 的商品，规格组与规格项均只取启用中、
+     * 按 sort_order 升序，因此下架商品与停用规格天然不可见——AI 工具据此无法「编造商品」。
+     * 返回的 {@code SpecOptionVo.id} 可直接作为计价引擎 {@code optionIds} 入参。</p>
+     *
+     * @param keyword 商品名关键词，空则返回全部在售商品
+     * @return 命中的在售商品（含基础价与可选规格），无命中返回空列表
+     */
+    public List<ProductVo> searchOnSaleProducts(String keyword) {
+        String trimmed = keyword == null ? null : keyword.trim();
+        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, Product.STATUS_ON)
+                .like(StringUtils.hasText(trimmed), Product::getName, trimmed)
+                .orderByAsc(Product::getSortOrder, Product::getId));
+        if (products.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> productIds = products.stream().map(Product::getId).toList();
+        Map<Long, List<SpecGroup>> groupsByProduct = loadSpecGroups(productIds);
+        Map<Long, List<SpecOption>> optionsByGroup = loadSpecOptions(groupsByProduct.values().stream()
+                .flatMap(List::stream)
+                .map(SpecGroup::getId)
+                .collect(Collectors.toSet()));
+        return products.stream()
+                .map(product -> toProductVo(product,
+                        groupsByProduct.getOrDefault(product.getId(), Collections.emptyList()),
+                        optionsByGroup))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 门店营业状态（读 shop_config：paused / notice）。
      */
     public ShopStatusVo getShopStatus() {
