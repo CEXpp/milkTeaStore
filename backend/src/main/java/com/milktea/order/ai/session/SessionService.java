@@ -81,27 +81,78 @@ public class SessionService {
     }
 
     /**
-     * 读会话草稿单（{@code ai_session.draft_items}）。
+     * 读会话草稿单（{@code ai_session.draft_items}），不做归属与过期校验。
      *
-     * <p>JSON 损坏或会话不存在时按空草稿处理并告警——草稿单坏了不该让整轮对话不可用
-     * （过期清理会把 {@code draft_items} 置 NULL，这里是同一种「无草稿」语义）。</p>
+     * <p>供「对话中」的 AI 工具使用：调用前已由 {@code AiChatService} 经
+     * {@link #locateOrCreate(String, Long)} 定位并校验过会话归属，会话必为未过期。
+     * JSON 损坏或会话不存在时按空草稿处理并告警——草稿单坏了不该让整轮对话不可用。
+     * 需要「归属 + 过期」双重校验的场景（如 T32 转单）请用
+     * {@link #loadOwnedDraft(String, Long)}。</p>
+     *
+     * @param sessionUuid 会话标识（即 {@code @MemoryId}）
+     * @return 草稿条目（可变，见 {@link #parseDraft}）；无草稿、会话不存在或 JSON 损坏时返回空列表
+     */
+    public List<DraftItem> loadDraft(String sessionUuid) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return new ArrayList<>();
+        }
+        AiSessionEntity session = aiSessionMapper.selectOne(
+                new LambdaQueryWrapper<AiSessionEntity>()
+                        .eq(AiSessionEntity::getSessionUuid, sessionUuid));
+        return parseDraft(session == null ? null : session.getDraftItems(), sessionUuid);
+    }
+
+    /**
+     * 读「属于当前顾客且未过期」的会话草稿单（T32 转单前置校验）。
+     *
+     * <p>与 {@link #loadDraft} 的差别：</p>
+     * <ul>
+     *   <li>会话归属他人 → 抛 403，防止顾客用他人 {@code sessionId} 把别人的草稿下单（SRS 5.4）；</li>
+     *   <li>会话不存在或已过期 → 返回空草稿，「草稿非空校验」据此给出 1007。
+     *       过期即作废与 LLD 6.5 口径一致（定时清理会把过期会话的 {@code draft_items} 置空，
+     *       这里不依赖清理任务的执行时机）。</li>
+     * </ul>
+     *
+     * @param sessionUuid 会话标识
+     * @param customerId  当前登录顾客
+     * @return 草稿条目（可变）；无草稿 / 会话不存在 / 已过期时返回空列表
+     * @throws BusinessException 会话归属他人时 403
+     */
+    public List<DraftItem> loadOwnedDraft(String sessionUuid, Long customerId) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return new ArrayList<>();
+        }
+        AiSessionEntity session = aiSessionMapper.selectOne(
+                new LambdaQueryWrapper<AiSessionEntity>()
+                        .eq(AiSessionEntity::getSessionUuid, sessionUuid));
+        if (session == null) {
+            return new ArrayList<>();
+        }
+        if (!Objects.equals(session.getCustomerId(), customerId)) {
+            log.warn("AI 会话归属校验失败：sessionUuid={} ownerId={} currentId={}",
+                    sessionUuid, session.getCustomerId(), customerId);
+            throw new BusinessException(ErrorCode.FORBIDDEN.getCode(), "会话不属于当前顾客");
+        }
+        if (session.getExpiresAt() != null && !session.getExpiresAt().isAfter(LocalDateTime.now())) {
+            log.info("AI 会话已过期，草稿按作废处理：sessionUuid={}", sessionUuid);
+            return new ArrayList<>();
+        }
+        return parseDraft(session.getDraftItems(), sessionUuid);
+    }
+
+    /**
+     * 草稿 JSON → 条目列表。
      *
      * <p><b>返回值恒为可变的 {@link ArrayList}</b>：调用方（工具集）需要在读到的条目上做
      * 追加/覆盖，使用 {@code List.of()} 这类不可变实现会在首次加购时抛
      * {@code UnsupportedOperationException}。</p>
      *
-     * @param sessionUuid 会话标识（即 {@code @MemoryId}）
-     * @return 草稿条目（可变）；无草稿、会话不存在或 JSON 损坏时返回空列表
+     * @param json        草稿单 JSON，可为 null/空
+     * @param sessionUuid 仅用于日志
+     * @return 可变条目列表；JSON 为空或损坏时返回空列表
      */
-    public List<DraftItem> loadDraft(String sessionUuid) {
+    private List<DraftItem> parseDraft(String json, String sessionUuid) {
         List<DraftItem> items = new ArrayList<>();
-        if (sessionUuid == null || sessionUuid.isBlank()) {
-            return items;
-        }
-        AiSessionEntity session = aiSessionMapper.selectOne(
-                new LambdaQueryWrapper<AiSessionEntity>()
-                        .eq(AiSessionEntity::getSessionUuid, sessionUuid));
-        String json = session == null ? null : session.getDraftItems();
         if (!StringUtils.hasText(json)) {
             return items;
         }
@@ -153,7 +204,27 @@ public class SessionService {
         return updateDraftColumn(sessionUuid, null);
     }
 
-    /** 按 {@code session_uuid} 条件更新草稿列，避免「先查后改」的并发窗口。 */
+    /**
+     * 原子占取草稿单：只有把非空草稿清空成功的那一次调用返回 {@code true}（T32 转单用）。
+     *
+     * <p>拦截「双击立即支付」：两个 confirm-order 请求各自读到非空草稿后，本方法保证
+     * 只有一方成功占取，另一方拿到 {@code false} 并按「草稿为空」处理，避免生成两笔订单。
+     * 返回值与建单在同一事务内，建单失败会连带回滚占取，草稿不会丢。</p>
+     *
+     * @param sessionUuid 会话标识
+     * @return {@code true} 表示本次调用清空了草稿（占取成功）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean claimDraft(String sessionUuid) {
+        if (sessionUuid == null || sessionUuid.isBlank()) {
+            return false;
+        }
+        return aiSessionMapper.clearDraftIfPresent(sessionUuid, LocalDateTime.now()) > 0;
+    }
+
+    /**
+     * 按 {@code session_uuid} 条件更新草稿列，避免「先查后改」的并发窗口。
+     */
     private boolean updateDraftColumn(String sessionUuid, String draftJson) {
         return aiSessionMapper.update(null, new LambdaUpdateWrapper<AiSessionEntity>()
                 .set(AiSessionEntity::getDraftItems, draftJson)
