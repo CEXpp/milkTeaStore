@@ -12,8 +12,9 @@ import dev.langchain4j.service.UserMessage;
  * 系统提示词 + 会话记忆（{@code MessageWindowChatMemory} 映射 {@code ai_message} 表）。
  * {@code @MemoryId} 绑定 {@code session_uuid}，实现按会话隔离的多轮上下文。</p>
  *
- * <p><b>工具集不在本任务范围</b>：LLD 6.3 的四个 {@code @Tool} 由 T30 以
- * {@code AiServices.tools(...)} 追加注册，本接口签名保持不变。</p>
+ * <p><b>工具集</b>：LLD 6.3 的四个 {@code @Tool}（{@code searchMenu} / {@code updateDraftOrder} /
+ * {@code getDraftOrder} / {@code clearDraftOrder}）由 T30 以 {@code AiServices.tools(...)}
+ * 追加注册（见 {@link com.milktea.order.ai.config.LangChain4jConfig}），本接口签名保持不变。</p>
  */
 public interface OrderAssistant {
 

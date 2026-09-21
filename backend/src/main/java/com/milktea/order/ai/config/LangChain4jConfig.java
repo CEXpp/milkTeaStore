@@ -2,6 +2,8 @@ package com.milktea.order.ai.config;
 
 import com.milktea.order.ai.OrderAssistant;
 import com.milktea.order.ai.session.ChatMemoryStoreImpl;
+import com.milktea.order.ai.tools.DraftOrderTool;
+import com.milktea.order.ai.tools.MenuSearchTool;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -61,14 +63,22 @@ public class LangChain4jConfig {
      * <p>记忆窗口的读写落在自定义 {@link ChatMemoryStore} 上，消息持久化到 {@code ai_message} 表，
      * 因此重启应用后同一会话的历史仍在（排期 T29 卡完成标准「记忆持久化（重启不丢）」）。</p>
      *
-     * @param chatModel     见 {@link #chatModel}
-     * @param memoryStore   自定义 ChatMemoryStore（映射 ai_message 表）
-     * @param maxMessages   记忆窗口消息数，20 条 ≈ 10 轮问答（HLD「10 轮记忆」）
+     * <p>T30 在此追加注册 LLD 6.3 的四个 {@code @Tool}（{@link MenuSearchTool} 1 个 +
+     * {@link DraftOrderTool} 3 个）。工具经 {@code @ToolMemoryId} 拿到本轮 {@code @MemoryId}
+     * （即 {@code session_uuid}），从而把草稿写进正确的会话。</p>
+     *
+     * @param chatModel       见 {@link #chatModel}
+     * @param memoryStore     自定义 ChatMemoryStore（映射 ai_message 表）
+     * @param menuSearchTool  AI 工具：查菜单
+     * @param draftOrderTool  AI 工具：改/看/清草稿
+     * @param maxMessages     记忆窗口消息数，20 条 ≈ 10 轮问答（HLD「10 轮记忆」）
      */
     @Bean
     public OrderAssistant orderAssistant(
             ChatModel chatModel,
             ChatMemoryStoreImpl memoryStore,
+            MenuSearchTool menuSearchTool,
+            DraftOrderTool draftOrderTool,
             @Value("${ai.max-messages:20}") int maxMessages) {
         return AiServices.builder(OrderAssistant.class)
                 .chatModel(chatModel)
@@ -77,6 +87,7 @@ public class LangChain4jConfig {
                         .maxMessages(maxMessages)
                         .chatMemoryStore(memoryStore)
                         .build())
+                .tools(menuSearchTool, draftOrderTool)
                 .build();
     }
 }
