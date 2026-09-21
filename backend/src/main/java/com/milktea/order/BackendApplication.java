@@ -14,8 +14,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 public class BackendApplication {
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         SpringApplication.run(BackendApplication.class, args);
+        System.out.println("<<<<<<<<<<<<<<<<<<<<<后端启动成功>>>>>>>>>>>>>>>>>>>");
     }
 
 }
