@@ -83,3 +83,6 @@ ai:
   max-messages: 20
   # 会话无活动过期时长（分钟）：LLD 6.5 / HLD
   session-timeout-minutes: 30
+  # 按顾客限流（T31，LLD 9.2「chat 接口按顾客维度限流 10 次/分钟，内存滑动窗口」）：
+  # 超出返回 code=1009，保护免费档模型额度（HLD 风险 R2）
+  rate-limit-per-minute: 10

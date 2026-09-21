@@ -78,20 +78,36 @@ public class OrderService {
     private int paymentTimeoutMinutes;
 
     /**
-     * 创建订单。整段在事务内完成（含订单号流水自增），保证原子性。
+     * 创建订单（小程序渠道）。整段在事务内完成（含订单号流水自增），保证原子性。
      *
      * @param request 下单请求（items + remark）
      * @return 下单响应
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderCreateVo createOrder(OrderCreateRequest request) {
+        return createOrder(request, Order.SOURCE_MINI_PROGRAM);
+    }
+
+    /**
+     * 创建订单（显式指定渠道来源）。
+     *
+     * <p>渠道之间的差异只有 {@code orders.source} 一个字段，其余流程（暂停接单校验 → 实时计价 →
+     * 统一发号 → 快照落库）完全一致，故以「同一入口 + 显式 source」实现，避免 AI 渠道复制一份建单逻辑
+     * （LLD 6.6：confirm-order 复用唯一价格入口与校验）。</p>
+     *
+     * @param request 下单请求（items + remark）
+     * @param source  渠道来源，取值见 {@link Order#SOURCE_MINI_PROGRAM} / {@link Order#SOURCE_AI} 等
+     * @return 下单响应
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderCreateVo createOrder(OrderCreateRequest request, String source) {
         checkShopOpen();
 
         // 实时计价：商品下架 / 规格非法会在此抛出 1002 / 1003 / 1001
         PricingResult priced = pricingService.calculatePrice(request.getItems());
 
         AuthContext.Principal principal = AuthContext.get();
-        Order order = insertOrder(priced, Order.SOURCE_MINI_PROGRAM,
+        Order order = insertOrder(priced, source,
                 principal == null ? null : principal.getCustomerId(), request.getRemark(), false);
 
         return toVo(order, priced);

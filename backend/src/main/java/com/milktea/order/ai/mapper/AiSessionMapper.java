@@ -38,4 +38,19 @@ public interface AiSessionMapper extends BaseMapper<AiSessionEntity> {
     @Update("UPDATE ai_session SET draft_items = NULL, updated_at = #{now} "
             + "WHERE expires_at < #{now} AND draft_items IS NOT NULL")
     int clearExpiredDrafts(@Param("now") LocalDateTime now);
+
+    /**
+     * 原子占取草稿单：仅当 {@code draft_items} 非空时清空，并返回受影响行数（T32）。
+     *
+     * <p>用条件更新而非「先查后清」，是为了拦截并发双击「立即支付」：
+     * 两个 confirm-order 请求同时读到非空草稿时，只有一个能命中本条件更新（另一次拿到 0 行），
+     * 从而只生成一笔订单——与 T12 支付用 {@code WHERE status = 'PENDING_PAYMENT'} 防重复支付同一思路。</p>
+     *
+     * @param sessionUuid 会话标识
+     * @param now         当前时间（同步刷新 updated_at）
+     * @return 1 表示本次占取成功；0 表示草稿已被清空（或本就不存在）
+     */
+    @Update("UPDATE ai_session SET draft_items = NULL, updated_at = #{now} "
+            + "WHERE session_uuid = #{sessionUuid} AND draft_items IS NOT NULL")
+    int clearDraftIfPresent(@Param("sessionUuid") String sessionUuid, @Param("now") LocalDateTime now);
 }
