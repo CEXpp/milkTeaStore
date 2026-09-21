@@ -6,8 +6,11 @@
  * - 真机联调（T28）：改成开发机局域网 IP，如 http://192.168.1.10:8080（手机与开发机同一 WiFi）
  * - 演示期（T36）：改成 cpolar 域名（https）
  *
- * 注意：小程序真机只允许 https + 已配置的合法域名；练手期请在微信开发者工具
- * 「详情 → 本地设置 → 不校验合法域名…」勾选后联调（manifest.json 已设 urlCheck=false）。
+ * 注意：小程序真机只允许 https + 已配置的合法域名；练手期联调必须二选一：
+ * ① 微信开发者工具「详情 → 本地设置 → 不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书」勾选；
+ * ② 仓库 `project.config.json` 的 `setting.urlCheck` 为 `false`（已设置，见 T33 fix）。
+ * 该开关是初学者最容易踩的坑：urlCheck 为 true 时，http:// 请求会被开发者工具直接拦截，
+ * 表现为「登录失败 / 请求发不出去」，而后端日志里什么都看不到。
  */
 export const BASE_URL = 'http://127.0.0.1:8080'
 
