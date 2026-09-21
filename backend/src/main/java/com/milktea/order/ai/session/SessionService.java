@@ -2,6 +2,7 @@ package com.milktea.order.ai.session;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.milktea.order.ai.draft.DraftItem;
 import com.milktea.order.ai.mapper.AiSessionMapper;
 import com.milktea.order.common.exception.BusinessException;
 import com.milktea.order.common.exception.ErrorCode;
@@ -11,18 +12,23 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
  * AI 会话生命周期服务（T29，LLD 6.5「AiSessionService 会话生命周期与草稿单管理」）。
  *
- * <p>职责：会话定位/新建、归属校验、活动续期、过期草稿惰性清理、草稿单存取（LLD 6.1
- * 「AiSessionService 会话生命周期与草稿单管理」）。消息历史的读写由
- * {@link ChatMemoryStoreImpl} 承担；草稿单的<b>内容语义</b>（商品/规格校验、计价、覆盖或追加）
- * 由 T30 的工具集承担，本服务只负责 {@code draft_items} 列的读写。</p>
+ * <p>职责：会话定位/新建、归属校验、活动续期、过期草稿惰性清理、草稿单存取。
+ * 消息历史的读写由 {@link ChatMemoryStoreImpl} 承担；草稿单的<b>内容语义</b>（商品/规格校验、
+ * 计价、覆盖或追加）由 AI 工具集（T30）与 {@code AiChatService}（T31）承担，
+ * 本服务负责 {@code draft_items} 列与 {@link DraftItem} 列表之间的编解码。</p>
  */
 @Slf4j
 @Service
@@ -30,6 +36,7 @@ import java.util.UUID;
 public class SessionService {
 
     private final AiSessionMapper aiSessionMapper;
+    private final ObjectMapper objectMapper;
 
     /** 会话无活动过期时长（分钟），LLD 6.5 口径为 30 分钟 */
     @Value("${ai.session-timeout-minutes:30}")
@@ -74,40 +81,59 @@ public class SessionService {
     }
 
     /**
-     * 读会话草稿单（{@code ai_session.draft_items} 原始 JSON）。
+     * 读会话草稿单（{@code ai_session.draft_items}）。
      *
-     * <p>只做存储职责、不解释内容：草稿单的增改语义（商品校验、计价、覆盖/追加）由 T30 的工具集承担，
-     * 本方法只按 {@code session_uuid} 取列值。</p>
+     * <p>JSON 损坏或会话不存在时按空草稿处理并告警——草稿单坏了不该让整轮对话不可用
+     * （过期清理会把 {@code draft_items} 置 NULL，这里是同一种「无草稿」语义）。</p>
+     *
+     * <p><b>返回值恒为可变的 {@link ArrayList}</b>：调用方（工具集）需要在读到的条目上做
+     * 追加/覆盖，使用 {@code List.of()} 这类不可变实现会在首次加购时抛
+     * {@code UnsupportedOperationException}。</p>
      *
      * @param sessionUuid 会话标识（即 {@code @MemoryId}）
-     * @return 草稿单 JSON；会话不存在或无草稿时返回 {@code null}
+     * @return 草稿条目（可变）；无草稿、会话不存在或 JSON 损坏时返回空列表
      */
-    public String readDraft(String sessionUuid) {
+    public List<DraftItem> loadDraft(String sessionUuid) {
+        List<DraftItem> items = new ArrayList<>();
         if (sessionUuid == null || sessionUuid.isBlank()) {
-            return null;
+            return items;
         }
         AiSessionEntity session = aiSessionMapper.selectOne(
                 new LambdaQueryWrapper<AiSessionEntity>()
                         .eq(AiSessionEntity::getSessionUuid, sessionUuid));
-        return session == null ? null : session.getDraftItems();
+        String json = session == null ? null : session.getDraftItems();
+        if (!StringUtils.hasText(json)) {
+            return items;
+        }
+        try {
+            DraftItem[] parsed = objectMapper.readValue(json, DraftItem[].class);
+            if (parsed != null) {
+                for (DraftItem item : parsed) {
+                    // 容错：[null] 之类的脏数据跳过，不让一条坏条目拖垮整轮对话
+                    if (item != null) {
+                        items.add(item);
+                    }
+                }
+            }
+        } catch (JacksonException e) {
+            log.warn("[AI] 草稿单 JSON 解析失败，按空草稿处理：sessionUuid={}", sessionUuid, e);
+        }
+        return items;
     }
 
     /**
-     * 覆盖写会话草稿单（整份 JSON 覆盖语义，与 MemoryWindow 的整窗覆盖一致）。
+     * 覆盖写会话草稿单（整份 JSON 覆盖语义，与消息记忆窗口的整窗覆盖一致）。
      *
      * @param sessionUuid 会话标识
-     * @param draftJson   草稿单 JSON
+     * @param items       草稿条目
      * @return 是否命中会话（{@code false} 表示会话不存在或已被清理）
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean writeDraft(String sessionUuid, String draftJson) {
+    public boolean saveDraft(String sessionUuid, List<DraftItem> items) {
         if (sessionUuid == null || sessionUuid.isBlank()) {
             return false;
         }
-        return aiSessionMapper.update(null, new LambdaUpdateWrapper<AiSessionEntity>()
-                .set(AiSessionEntity::getDraftItems, draftJson)
-                .set(AiSessionEntity::getUpdatedAt, LocalDateTime.now())
-                .eq(AiSessionEntity::getSessionUuid, sessionUuid)) > 0;
+        return updateDraftColumn(sessionUuid, objectMapper.writeValueAsString(items));
     }
 
     /**
@@ -124,8 +150,13 @@ public class SessionService {
         if (sessionUuid == null || sessionUuid.isBlank()) {
             return false;
         }
+        return updateDraftColumn(sessionUuid, null);
+    }
+
+    /** 按 {@code session_uuid} 条件更新草稿列，避免「先查后改」的并发窗口。 */
+    private boolean updateDraftColumn(String sessionUuid, String draftJson) {
         return aiSessionMapper.update(null, new LambdaUpdateWrapper<AiSessionEntity>()
-                .set(AiSessionEntity::getDraftItems, null)
+                .set(AiSessionEntity::getDraftItems, draftJson)
                 .set(AiSessionEntity::getUpdatedAt, LocalDateTime.now())
                 .eq(AiSessionEntity::getSessionUuid, sessionUuid)) > 0;
     }
