@@ -116,7 +116,9 @@ function handleChatError(error: unknown): void {
       return
     }
   }
-  appendMessage({ role: 'assistant', text: '刚才没听清，再说一次好吗？' })
+  // 兜底文案必须说「服务出问题了」，不能说「没听清」——后者会让人以为是模型听不懂，
+  // 而实际情况通常是后端异常（如数据库死锁 / 500），本轮模型压根没被调起来。
+  appendMessage({ role: 'assistant', text: '抱歉，刚才点单服务出了点问题，请再试一次～' })
 }
 
 /** 数量增减：翻译成一句指令交给对话链路，由模型改写服务端草稿。 */

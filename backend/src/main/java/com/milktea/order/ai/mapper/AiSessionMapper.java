@@ -27,6 +27,26 @@ public interface AiSessionMapper extends BaseMapper<AiSessionEntity> {
     Long selectIdByUuid(@Param("sessionUuid") String sessionUuid);
 
     /**
+     * 取会话主键<b>并加行锁</b>（{@code SELECT ... FOR UPDATE}），用于串行化同一会话的消息写回。
+     *
+     * <p>为什么需要：{@link com.milktea.order.ai.session.ChatMemoryStoreImpl#updateMessages} 的语义是
+     * 「整窗覆盖」——同一事务内<b>先删该会话全部消息、再逐条插入</b>。两个请求同时落在同一会话时
+     * （用户连点、网络重发、模拟器与真机同时在用），Tx1 删除后要插入的位置正好落在 Tx2 已持有的间隙锁内，
+     * 形成死锁并抛 {@code DeadlockLoserDataAccessException}，整轮对话失败。</p>
+     *
+     * <p>先对本行加排他锁，使同一会话的写回按到达顺序串行执行：后来者在此等待，
+     * 待前一个事务提交后再做「删 + 插」，从根上消除该交叉。锁粒度是<b>单会话</b>，
+     * 不同会话之间互不阻塞。</p>
+     *
+     * <p>调用方必须已处于事务中（行锁在事务提交时释放）。</p>
+     *
+     * @param sessionUuid 会话 UUID
+     * @return 会话主键；不存在返回 {@code null}（此时不加锁，也无法写回）
+     */
+    @Select("SELECT id FROM ai_session WHERE session_uuid = #{sessionUuid} FOR UPDATE")
+    Long lockIdByUuid(@Param("sessionUuid") String sessionUuid);
+
+    /**
      * 惰性清理过期会话的草稿单（LLD 4.3 条件更新防并发模式 + HLD 数据保留策略）。
      *
      * <p>只作废草稿、不动消息历史（HLD：「AI 会话数据 30 分钟过期后惰性清理草稿，消息历史保留」）；
