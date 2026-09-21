@@ -27,10 +27,20 @@ export interface PageResult<T> {
 export class ApiError extends Error {
   readonly code: number
 
-  constructor(code: number, message: string) {
+  /**
+   * 错误响应体里的 data。
+   *
+   * 多数接口的错误 data 为空，但契约要求部分接口在错误码里携带数据——
+   * 典型是 LLD 3.4「AI 不可用时 code=1008，data.fallbackText 给兜底话术」，
+   * 因此这里把 data 一并带出，供调用方读取（如 AI 点单页的降级横幅）。
+   */
+  readonly data: unknown
+
+  constructor(code: number, message: string, data?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.code = code
+    this.data = data
   }
 }
 
@@ -194,5 +204,5 @@ async function send<T>(options: RequestOptions, retried: boolean): Promise<T> {
 
   const message = body.message || '请求失败'
   toast(message)
-  throw new ApiError(body.code, message)
+  throw new ApiError(body.code, message, body.data)
 }
