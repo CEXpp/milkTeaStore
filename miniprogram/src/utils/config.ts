@@ -9,7 +9,7 @@
  * 注意：小程序真机只允许 https + 已配置的合法域名；练手期请在微信开发者工具
  * 「详情 → 本地设置 → 不校验合法域名…」勾选后联调（manifest.json 已设 urlCheck=false）。
  */
-export const BASE_URL = 'http://127.0.0.1:8080'
+export const BASE_URL = 'http://10.222.68.103:8080'
 
 /**
  * 登录通道开关（LLD 8.3：wx.login → jscode2session → JWT）。
