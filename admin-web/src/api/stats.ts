@@ -62,18 +62,24 @@ export interface StatsOrderQuery extends PageQuery {
   status?: OrderStatus
 }
 
-/** 订单流水明细条目（含状态/取餐码/渠道/金额/时间组/作废原因，供对账） */
+/**
+ * 订单流水明细条目（含状态/取餐码/渠道/金额/时间组/作废原因，供对账）。
+ *
+ * 字段与后端 T34 的 `StatsOrderRowVo`（LLD 3.5.4）一一对应：明细表只给订单级字段，
+ * 不返回商品摘要（那是看板接口的事），故此处不含 items。
+ */
 export interface StatsOrderItem {
   orderId: number
   orderNo: string
   pickupCode: string | null
   source: OrderSource
   status: OrderStatus
-  items: string[]
   totalAmount: string
   createdAt: string
   paidAt: string | null
+  startedAt: string | null
   completedAt: string | null
+  closedAt: string | null
   voidedAt: string | null
   voidReason: string | null
 }

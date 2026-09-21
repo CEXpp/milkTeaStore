@@ -211,6 +211,7 @@ onBeforeUnmount(() => {
         </div>
         <el-button class="counter-entry" type="primary" plain @click="router.push('/counter')">柜台点单</el-button>
         <el-button class="products-entry" plain @click="router.push('/products')">商品管理</el-button>
+        <el-button class="stats-entry" plain @click="router.push('/stats')">账台统计</el-button>
         <span class="board-user">{{ authStore.nickname || '店长' }}</span>
         <el-button link type="primary" @click="handleLogout">退出登录</el-button>
       </div>

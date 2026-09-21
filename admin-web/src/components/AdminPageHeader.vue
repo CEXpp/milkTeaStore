@@ -2,7 +2,7 @@
 import { useRouter } from 'vue-router'
 
 /**
- * 商家端业务页统一顶栏（T21-T23）：返回看板 + 页面标题 + 商品域互跳。
+ * 商家端业务页统一顶栏（T21-T23，T35 补统计入口）：返回看板 + 页面标题 + 业务域互跳。
  * 右侧操作区由使用方通过默认插槽提供（如「新建商品」「新建分类」按钮）。
  */
 defineProps<{
@@ -20,6 +20,7 @@ const router = useRouter()
       <el-button link type="primary" @click="router.push('/products')">商品管理</el-button>
       <el-button link type="primary" @click="router.push('/categories')">分类管理</el-button>
       <el-button link type="primary" @click="router.push('/specs')">规格模板</el-button>
+      <el-button link type="primary" @click="router.push('/stats')">账台统计</el-button>
     </div>
     <div class="topbar-right">
       <slot />
