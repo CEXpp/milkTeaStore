@@ -71,11 +71,17 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
      * 写回记忆窗口当前状态（整窗覆盖语义，与 {@code MessageWindowChatMemory} 的约定一致）。
      *
      * <p>整窗覆盖意味着「先删后插」，两步必须在同一事务内，否则中途失败会丢历史。</p>
+     *
+     * <p><b>并发保护（死锁修复）</b>：本方法每轮对话都会被调用一次，而 LangChain4j 在工具调用循环里
+     * 还可能多次触发。若同一会话上有两个请求交叉执行，「Tx1 删除后插入」与「Tx2 已持有的间隙锁」会互相
+     * 等待，MySQL 抛死锁并回滚其中一方，整轮对话以 1008 失败。因此这里先经
+     * {@link AiSessionMapper#lockIdByUuid} 对会话行加排他锁，把同一会话的写回串行化；
+     * 这是「按会话串行」而非全局串行，不同会话互不影响。</p>
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
-        Long sessionId = resolveSessionId(memoryId);
+        Long sessionId = resolveSessionIdForUpdate(memoryId);
         if (sessionId == null) {
             log.warn("AI 记忆写回时未找到会话，本次写回跳过：memoryId={}", memoryId);
             return;
@@ -112,6 +118,18 @@ public class ChatMemoryStoreImpl implements ChatMemoryStore {
             return null;
         }
         return aiSessionMapper.selectIdByUuid(String.valueOf(memoryId));
+    }
+
+    /**
+     * 同 {@link #resolveSessionId}，但顺带对该会话行加排他锁（仅在事务内有效）。
+     *
+     * <p>用于整窗覆盖写回：先锁会话行，再「删 + 插」，使同一会话的并发写回串行化，避免死锁。</p>
+     */
+    private Long resolveSessionIdForUpdate(Object memoryId) {
+        if (memoryId == null) {
+            return null;
+        }
+        return aiSessionMapper.lockIdByUuid(String.valueOf(memoryId));
     }
 
     /**
