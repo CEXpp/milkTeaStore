@@ -1,6 +1,46 @@
-# 本阶段仅含 MySQL + MinIO，backend 服务后续阶段再加
+# =====================================================================
+# 奶茶点单系统 · 本地部署编排
+#
+# 拓扑：MySQL 与 MinIO 部署在远端服务器（地址见 backend/src/main/resources/application-dev.yml），
+#       本地只需运行 backend 容器；容器启动后经远端地址直连 DB / 对象存储。
+#
+# 用法：
+#   cd docker
+#   docker compose up -d --build        # 默认只起 backend
+#   curl http://127.0.0.1:8080/actuator/health
+#   # 公网暴露：本机装 cpolar，隧道指向 8080 → HTTPS 域名
+#
+# 说明：mysql / minio 两个服务是「本地自建基础设施」的备份定义，默认不启动；
+#       仅当需要在本机起基础设施时用：docker compose --profile infra up -d
+# =====================================================================
 services:
+  # -------------------------------------------------------------------
+  # 本地后端：连远端 MySQL / MinIO（由 application-dev.yml 指定，无需在此覆盖）
+  # -------------------------------------------------------------------
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: milktea-backend:latest
+    container_name: demo-backend
+    restart: unless-stopped
+    environment:
+      # 与后端业务时区一致（订单号 yyMMdd / 取餐码自然日重置基准）
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # -------------------------------------------------------------------
+  # 以下为「本地自建基础设施」备份定义，默认不启动（仅 --profile infra 时启用）
+  # -------------------------------------------------------------------
   mysql:
+    profiles: ["infra"]
     image: mysql:8.0                # 建议钉在 8.0 系列；mysql:8 会漂到 8.4，行为略有差异
     container_name: demo-mysql
     restart: unless-stopped
@@ -25,6 +65,7 @@ services:
       retries: 5
       start_period: 30s            # 首次建库慢，给足宽限期
   minio:
+    profiles: ["infra"]
     image: minio/minio:latest
     container_name: demo-minio
     restart: unless-stopped

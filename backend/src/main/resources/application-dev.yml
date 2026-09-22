@@ -72,7 +72,7 @@ ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）
   base-url: https://open.bigmodel.cn/api/paas/v4
   # 密钥一律走环境变量，不入库不入前端（排期附录 A 指定变量名 AI_API_KEY）
-  api-key: "${AI_API_KEY:}"
+  api-key: "${AI_API_KEY:25db6904d778439791aeb44682aa9f1d.b1MSBRPkkCD1v4ii}"
   model: glm-4-flash
   # 点单场景求稳定不求发散（LLD 6.2）
   temperature: 0.2
