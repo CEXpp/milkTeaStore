@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven 依赖下载源配置（与 Docker 镜像加速 / apt 源无关，只作用于 mvn 拉依赖） -->
+<!-- 仅在 Docker 构建阶段通过 COPY 注入到镜像内的 /root/.m2/settings.xml -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <!-- 阿里云公共仓库（Maven Central 的国内代理）。只镜像 central，pom 里声明的其他仓库不受影响 -->
+    <mirror>
+      <id>aliyunmaven</id>
+      <mirrorOf>central</mirrorOf>
+      <name>Aliyun Maven Public Repository</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>
