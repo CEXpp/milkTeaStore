@@ -26,6 +26,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./backend        # 指定构建上下文为 backend 目录
+          file: ./backend/Dockerfile # 明确指定 Dockerfile 路径
           push: true
           tags: ${{ env.IMAGE }}:test-latest
