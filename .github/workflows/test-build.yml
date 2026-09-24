@@ -1,0 +1,31 @@
+name: test-build-ghcr
+on:
+  push:
+    branches: [priview]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/lurmou/milkteastore
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:test-latest
