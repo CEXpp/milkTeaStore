@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ###############################################################################
 # 后端镜像：两阶段构建，全部使用你 ACR 里的基础镜像
 #   构建阶段：jujube/maven:3.9-eclipse-temurin-25-alpine（Maven 3.9 + JDK 25）
