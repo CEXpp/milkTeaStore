@@ -12,9 +12,10 @@
  * 该开关是初学者最容易踩的坑：urlCheck 为 true 时，http:// 请求会被开发者工具直接拦截，
  * 表现为「登录失败 / 请求发不出去」，而后端日志里什么都看不到。
  */
-export const BASE_URL = 'http://127.0.0.1:8080'
+export const BASE_URL = 'http://112.74.108.130:8080'
 
 /**
+
  * 登录通道开关（LLD 8.3：wx.login → jscode2session → JWT）。
  *
  * 练手期后端未配置微信 AppSecret（application-dev.yml 的 wx.secret 为空），
