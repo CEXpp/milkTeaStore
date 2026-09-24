@@ -1,0 +1,32 @@
+name: test-build-ghcr
+on:
+  push:
+    branches: [priview]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/cexpp/milkteastore
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend        # 指定构建上下文为 backend 目录
+          file: ./backend/Dockerfile # 明确指定 Dockerfile 路径
+          push: true
+          tags: ${{ env.IMAGE }}:test-latest
