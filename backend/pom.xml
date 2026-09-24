@@ -198,6 +198,45 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>3.4.0</version>
+                <configuration>
+                    <!-- 基础镜像：只含 JRE，体积小 -->
+                    <from>
+                        <image>eclipse-temurin:25-jre-alpine</image>
+                    </from>
+                    <!-- 推送目标：替换成你自己的仓库地址 -->
+                    <to>
+                        <image>crpi-0ocfwxlhi3317izj.cn-guangzhou.personal.cr.aliyuncs.com/jujube/milktea</image>
+                        <tags>
+                            <tag>${project.version}</tag>
+                        </tags>
+                        <auth>
+                            <!-- 用户名：阿里云账号全名（含@qq.com/@163.com这类后缀） -->
+                            <!-- 密码：之前设置的固定密码 -->
+                            <username>${env.REGISTRY_USERNAME}</username>
+                            <password>${env.REGISTRY_PASSWORD}</password>
+                        </auth>
+                    </to>
+                    <container>
+                        <ports>
+                            <port>8080</port>
+                        </ports>
+                        <!-- JVM 参数：感知容器内存限制 -->
+                        <jvmFlags>
+                            <jvmFlag>-XX:+UseContainerSupport</jvmFlag>
+                            <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+                        </jvmFlags>
+                        <!-- 时区 -->
+                        <environment>
+                            <TZ>Asia/Shanghai</TZ>
+                        </environment>
+                    </container>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
 
