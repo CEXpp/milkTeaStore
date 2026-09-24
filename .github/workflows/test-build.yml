@@ -8,7 +8,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/lurmou/milkteastore
+  IMAGE: ghcr.io/cexpp/milkteastore
 
 jobs:
   build:
