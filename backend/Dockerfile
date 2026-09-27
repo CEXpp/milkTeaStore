@@ -33,6 +33,10 @@ RUN ./mvnw -B -ntp -DskipTests package \
 # 2) 运行阶段
 # ---------------------------------------------------------------------
 FROM eclipse-temurin:25-jdk AS runtime
+
+# 接收构建时传入的 git commit sha（供 OCI label 使用）
+ARG VCS_REF=unknown
+
 WORKDIR /app
 
 ENV TZ=Asia/Shanghai \
@@ -49,5 +53,16 @@ EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=10 \
     CMD curl -f http://127.0.0.1:8080/actuator/health || exit 1
+
+LABEL org.opencontainers.image.title="milkTeaStore Backend" \
+      org.opencontainers.image.description="奶茶点单系统后端服务（Spring Boot 4.1.1 / Java 25）" \
+      org.opencontainers.image.source="https://github.com/CEXpp/milkTeaStore" \
+      org.opencontainers.image.url="https://github.com/CEXpp/milkTeaStore" \
+      org.opencontainers.image.documentation="https://github.com/CEXpp/milkTeaStore/blob/main/README.md" \
+      org.opencontainers.image.license="MIT" \
+      org.opencontainers.image.authors="lurmou" \
+      org.opencontainers.image.vendor="milkTeaStore" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.revision="${VCS_REF}"
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
