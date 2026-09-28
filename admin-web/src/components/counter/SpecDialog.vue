@@ -88,16 +88,23 @@ function handleKeydown(event: KeyboardEvent): void {
 
 <template>
   <el-dialog
-    :model-value="visible"
-    :title="product?.name ?? '选择规格'"
+    :model-value="props.visible"
+    :title="props.product?.name ?? '选择规格'"
     width="520px"
     append-to-body
     @update:model-value="emit('update:visible', $event)"
   >
-    <div v-if="product" class="spec-dialog" @keydown="handleKeydown">
-      <div v-for="group in product.specGroups" :key="group.code" class="spec-group">
+    <div v-if="props.product" class="spec-dialog" @keydown="handleKeydown">
+      <div class="product-brief">
+        <span class="brief-name">{{ props.product.name }}</span>
+        <span class="brief-price">￥{{ props.product.basePrice }}</span>
+      </div>
+
+      <div v-for="group in props.product.specGroups" :key="group.code" class="spec-group">
         <div class="spec-group-name">
-          {{ group.name }}<span v-if="!group.multiSelect" class="required">*</span>
+          {{ group.name }}
+          <span v-if="!group.multiSelect" class="required">*</span>
+          <span class="group-mode">{{ group.multiSelect ? '可多选' : '单选' }}</span>
         </div>
         <div class="spec-options">
           <button
@@ -114,7 +121,7 @@ function handleKeydown(event: KeyboardEvent): void {
         </div>
       </div>
 
-      <div class="spec-group">
+      <div class="spec-group qty-group">
         <div class="spec-group-name">数量</div>
         <el-input-number v-model="quantity" :min="MIN_QTY" :max="MAX_QTY" />
       </div>
@@ -133,55 +140,103 @@ function handleKeydown(event: KeyboardEvent): void {
 </template>
 
 <style scoped>
+.product-brief {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 14px;
+  margin-bottom: var(--gap-4);
+  background: var(--brand-050);
+  border-radius: var(--radius-md);
+}
+
+.brief-name {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.brief-price {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--c-danger);
+}
+
 .spec-group + .spec-group {
-  margin-top: 14px;
+  margin-top: var(--gap-4);
 }
 
 .spec-group-name {
-  margin-bottom: 8px;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--gap-2);
+  font-size: var(--fs-sm);
   font-weight: 600;
-  color: #606266;
+  color: var(--text-2);
 }
 
 .required {
-  margin-left: 2px;
-  color: #f56c6c;
+  color: var(--c-danger);
+}
+
+.group-mode {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-pill);
 }
 
 .spec-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .spec-pill {
-  padding: 6px 16px;
-  font-size: 14px;
-  color: #303133;
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-  border-radius: 18px;
+  padding: 7px 16px;
+  font-size: var(--fs-body);
+  color: var(--text-1);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: all 0.2s;
   font-family: inherit;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .spec-pill:hover {
-  border-color: #409eff;
-  color: #409eff;
+  color: var(--brand-500);
+  border-color: var(--brand-400);
+  background: var(--brand-050);
+}
+
+.spec-pill:active {
+  transform: scale(0.97);
 }
 
 .spec-pill.active {
   color: #fff;
-  background: #409eff;
-  border-color: #409eff;
+  background: linear-gradient(135deg, var(--brand-400) 0%, var(--brand-600) 100%);
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(75, 91, 214, 0.28);
 }
 
 .spec-pill .delta {
   margin-left: 4px;
-  font-size: 12px;
+  font-size: var(--fs-xs);
   opacity: 0.85;
+}
+
+.qty-group {
+  padding-top: var(--gap-3);
+  border-top: 1px dashed var(--border);
 }
 
 .spec-footer {
@@ -191,12 +246,18 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 .spec-total {
-  font-size: 14px;
-  color: #606266;
+  font-size: var(--fs-body);
+  color: var(--text-2);
 }
 
 .spec-total b {
   font-size: 20px;
-  color: #f56c6c;
+  color: var(--c-danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.spec-actions {
+  display: flex;
+  gap: var(--gap-2);
 }
 </style>

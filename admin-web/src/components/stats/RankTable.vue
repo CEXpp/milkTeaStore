@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { getStatsRanking, type StatsRankingItem } from '@/api/stats'
+import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 
 /**
  * 商品销量排行（T35）：range 切换「今日 / 近 7 日」，按件数降序取前 10。
@@ -32,7 +33,8 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load)
+// 统计页被 keep-alive 缓存，重新激活时也要重取一次，避免排行停留在上次数据
+useMountOrActivateRefresh(() => void load())
 watch(range, load)
 </script>
 
@@ -50,7 +52,11 @@ watch(range, load)
     </template>
 
     <el-table :data="rows" v-loading="loading" size="small" empty-text="该区间暂无销量数据">
-      <el-table-column type="index" label="#" width="52" />
+      <el-table-column type="index" label="#" width="52">
+        <template #default="{ $index }">
+          <span class="rank-index" :class="{ 'is-top': $index < 3 }">{{ $index + 1 }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="productName" label="商品" min-width="140" show-overflow-tooltip />
       <el-table-column prop="cupCount" label="件数" width="90" />
       <el-table-column prop="amount" label="金额(元)" width="110" />
@@ -63,10 +69,31 @@ watch(range, load)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--gap-3);
 }
 
 .card-title {
+  font-size: var(--fs-h2);
   font-weight: 600;
+  color: var(--text-1);
+}
+
+.rank-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.rank-index.is-top {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-400) 0%, var(--brand-600) 100%);
 }
 </style>

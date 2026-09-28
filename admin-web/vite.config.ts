@@ -24,6 +24,28 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true
         }
       }
+    },
+    build: {
+      // 依赖按「变更频率」拆包：业务代码频繁改动，第三方依赖长期命中缓存
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string): string | undefined {
+            if (!id.includes('node_modules')) return undefined
+            if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) return 'echarts'
+            if (id.includes('node_modules/element-plus') || id.includes('@element-plus')) return 'element-plus'
+            if (
+              id.includes('node_modules/vue') ||
+              id.includes('node_modules/@vue') ||
+              id.includes('node_modules/pinia') ||
+              id.includes('node_modules/vue-router')
+            ) {
+              return 'vue'
+            }
+            return 'vendor'
+          }
+        }
+      }
     }
   }
 })

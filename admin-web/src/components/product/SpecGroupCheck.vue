@@ -72,32 +72,50 @@ function toggleAll(): void {
 .spec-group-check {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-2);
 }
 
 .toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-bottom: var(--gap-2);
 }
 
 .hint {
-  font-size: 12px;
-  color: #909399;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
 }
 
 .spec-checkbox {
-  height: 28px;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.spec-checkbox:hover {
+  border-color: var(--brand-400);
+  background: var(--brand-050);
 }
 
 .code {
   margin-left: 6px;
-  font-size: 12px;
-  color: #c0c4cc;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .empty-tip {
-  font-size: 12px;
-  color: #e6a23c;
+  padding: 6px 10px;
+  font-size: var(--fs-xs);
+  color: #b88230;
+  background: var(--c-warning-soft);
+  border-radius: var(--radius-sm);
 }
 </style>

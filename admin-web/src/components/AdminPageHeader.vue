@@ -1,56 +1,76 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-
 /**
- * 商家端业务页统一顶栏（T21-T23，T35 补统计入口）：返回看板 + 页面标题 + 业务域互跳。
- * 右侧操作区由使用方通过默认插槽提供（如「新建商品」「新建分类」按钮）。
+ * 业务页轻量页头：标题 + 可选副说明 + 右侧操作插槽。
+ * 导航职责已由 AdminLayout 的侧栏承担，这里只做页面级标题与操作区（如「新建商品」）。
+ * props 保持向后兼容：使用方只需传 title，右侧继续用默认插槽。
  */
 defineProps<{
   title: string
+  /** 标题右侧的一句说明（选填） */
+  subtitle?: string
 }>()
-
-const router = useRouter()
 </script>
 
 <template>
-  <header class="page-topbar">
-    <div class="topbar-left">
-      <el-button link type="primary" @click="router.push('/board')">← 返回看板</el-button>
-      <span class="page-title">{{ title }}</span>
-      <el-button link type="primary" @click="router.push('/products')">商品管理</el-button>
-      <el-button link type="primary" @click="router.push('/categories')">分类管理</el-button>
-      <el-button link type="primary" @click="router.push('/specs')">规格模板</el-button>
-      <el-button link type="primary" @click="router.push('/stats')">账台统计</el-button>
+  <header class="page-header">
+    <div class="header-left">
+      <h2 class="page-title">{{ title }}</h2>
+      <span v-if="subtitle" class="page-subtitle">{{ subtitle }}</span>
     </div>
-    <div class="topbar-right">
+    <div class="header-right">
       <slot />
     </div>
   </header>
 </template>
 
 <style scoped>
-.page-topbar {
+.page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  gap: var(--gap-3);
+  margin-bottom: var(--gap-4);
 }
 
-.topbar-left {
+.header-left {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-3);
+  min-width: 0;
 }
 
 .page-title {
+  position: relative;
+  padding-left: 12px;
   font-size: 18px;
   font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text-1);
+}
+
+/* 标题左侧靛蓝指示条：与侧栏激活态呼应 */
+.page-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--brand-400) 0%, var(--brand-600) 100%);
+}
+
+.page-subtitle {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
 }
 </style>

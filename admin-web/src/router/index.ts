@@ -2,9 +2,12 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getToken } from '@/utils/token'
 
 /**
- * 路由表（LLD 7.2）：/login 免守卫；业务页面懒加载。
- * 已落地：/board（T19）、/counter（T20）、/products（T21）、/categories 与 /specs（T22）、/stats（T35）；
- * 待落地：/settings。
+ * 路由表（LLD 7.2）：/login 免守卫且独立布局；业务页统一挂在 AdminLayout 之下。
+ *
+ * meta 约定：
+ * - title / desc：顶栏标题与副标题（缺省时由 config/nav.ts 按 path 兜底）；
+ * - fullHeight：内容区不留白不滚动，由页面内部控制（柜台点单）；
+ * - keepAlive：切换后保留实例，避免重建与重复请求（看板、统计）。
  */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/board' },
@@ -15,34 +18,46 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true }
   },
   {
-    path: '/board',
-    name: 'board',
-    component: () => import('@/views/Board.vue')
-  },
-  {
-    path: '/counter',
-    name: 'counter',
-    component: () => import('@/views/Counter.vue')
-  },
-  {
-    path: '/products',
-    name: 'products',
-    component: () => import('@/views/Products.vue')
-  },
-  {
-    path: '/categories',
-    name: 'categories',
-    component: () => import('@/views/Categories.vue')
-  },
-  {
-    path: '/specs',
-    name: 'specs',
-    component: () => import('@/views/Specs.vue')
-  },
-  {
-    path: '/stats',
-    name: 'stats',
-    component: () => import('@/views/Stats.vue')
+    path: '/',
+    component: () => import('@/layout/AdminLayout.vue'),
+    children: [
+      {
+        path: 'board',
+        name: 'board',
+        component: () => import('@/views/Board.vue'),
+        meta: { title: '订单看板', keepAlive: true }
+      },
+      {
+        path: 'counter',
+        name: 'counter',
+        component: () => import('@/views/Counter.vue'),
+        meta: { title: '柜台点单', fullHeight: true }
+      },
+      {
+        path: 'products',
+        name: 'products',
+        component: () => import('@/views/Products.vue'),
+        meta: { title: '商品管理' }
+      },
+      {
+        path: 'categories',
+        name: 'categories',
+        component: () => import('@/views/Categories.vue'),
+        meta: { title: '分类管理' }
+      },
+      {
+        path: 'specs',
+        name: 'specs',
+        component: () => import('@/views/Specs.vue'),
+        meta: { title: '规格模板' }
+      },
+      {
+        path: 'stats',
+        name: 'stats',
+        component: () => import('@/views/Stats.vue'),
+        meta: { title: '账台统计', keepAlive: true }
+      }
+    ]
   },
   { path: '/:pathMatch(.*)*', redirect: '/board' }
 ]
