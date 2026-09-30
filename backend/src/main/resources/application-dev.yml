@@ -1,11 +1,14 @@
 # 本地联调：MySQL / MinIO 地址与密钥从 backend/.env 读取（该文件不入库）；
 # 未提供 .env 时全部回落到 localhost 默认值（配合 docker compose --profile infra 本地自建）
 spring:
+  config:
+    import:
+      - optional:file:backend/.env[.properties]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # allowPublicKeyRetrieval=true 必须加：MySQL 8 默认 caching_sha2_password，
     # JDBC 非 SSL 连接时不加会报 Public Key Retrieval is not allowed
-    url: ${DEV_DB_URL:jdbc:mysql://localhost:3307/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${DEV_DB_URL:jdbc:mysql://localhost:3306/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${DEV_DB_USERNAME:root}
     password: ${DEV_DB_PASSWORD:1234}
   flyway:
