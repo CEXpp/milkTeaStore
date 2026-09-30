@@ -1,0 +1,6 @@
+# backend/.dockerignore —— 缩小镜像构建上下文，排除构建产物与版本控制目录
+**/target
+**/.git
+**/.idea
+**/*.iml
+**/debug.log
