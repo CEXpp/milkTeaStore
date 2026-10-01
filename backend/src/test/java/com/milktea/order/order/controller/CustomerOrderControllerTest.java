@@ -6,6 +6,7 @@ import com.milktea.order.common.exception.GlobalExceptionHandler;
 import com.milktea.order.common.jwt.AuthContext;
 import com.milktea.order.common.result.PageResult;
 import com.milktea.order.order.dto.OptionSnapshot;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.service.OrderQueryService;
 import com.milktea.order.order.service.OrderService;
 import com.milktea.order.order.vo.OrderDetailItemVo;
@@ -58,7 +59,10 @@ class CustomerOrderControllerTest {
     void setUp() {
         orderService = mock(OrderService.class);
         orderQueryService = mock(OrderQueryService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new CustomerOrderController(orderService, orderQueryService))
+        // T43：控制器新增了实时事件发布器依赖（SSE 端点用），本契约测试只关心 REST 面，注入 mock 即可
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(new CustomerOrderController(orderService, orderQueryService,
+                        mock(OrderEventPublisher.class)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
