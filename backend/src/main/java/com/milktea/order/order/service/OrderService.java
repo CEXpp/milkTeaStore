@@ -13,6 +13,7 @@ import com.milktea.order.order.dto.PricingResult;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderItem;
 import com.milktea.order.order.entity.OrderStatus;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.mapper.OrderItemMapper;
 import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.vo.CounterOrderVo;
@@ -57,6 +58,10 @@ import java.util.Objects;
  *
  * <p>域边界（HLD 2.3）：支付域只提供策略与路由，订单表读写留在本域；
  * 店铺暂停开关不影响已下单订单（需求规格 4.6），故支付流程不做暂停校验。</p>
+ *
+ * <p><b>实时事件（T43，LLD 11.1）</b>：下单（PENDING_PAYMENT）、支付（PAID）、柜台单（PAID）
+ * 三处状态落定后经 {@link OrderEventPublisher} 发布状态变更事件；发布发生在事务内，
+ * 由发布器延迟到提交后投递。</p>
  */
 @Slf4j
 @Service
@@ -73,6 +78,7 @@ public class OrderService {
     private final SequenceService sequenceService;
     private final ShopConfigMapper shopConfigMapper;
     private final PaymentService paymentService;
+    private final OrderEventPublisher eventPublisher;
 
     @Value("${order.payment-timeout-minutes:15}")
     private int paymentTimeoutMinutes;
@@ -110,6 +116,8 @@ public class OrderService {
         Order order = insertOrder(priced, source,
                 principal == null ? null : principal.getCustomerId(), request.getRemark(), false);
 
+        // 六态之 PENDING_PAYMENT：下单即发布（顾客端事件通道据此对齐「待支付」）
+        eventPublisher.publishStatusChanged(order);
         return toVo(order, priced);
     }
 
@@ -126,6 +134,8 @@ public class OrderService {
         Order order = insertOrder(priced, Order.SOURCE_COUNTER, null, request.getRemark(), true);
         log.info("[T14] 柜台单创建成功 orderId={} orderNo={} pickupCode={} amount={}",
                 order.getId(), order.getOrderNo(), order.getPickupCode(), order.getTotalAmount());
+        // 六态之 PAID：柜台单创建即已支付，单独发布一次让看板即时上新单（无关联顾客，仅商家通道）
+        eventPublisher.publishStatusChanged(order);
         return new CounterOrderVo(order.getId(), order.getOrderNo(), order.getPickupCode(),
                 MoneyUtils.format(order.getTotalAmount()));
     }
@@ -219,7 +229,10 @@ public class OrderService {
 
         log.info("[T12] 订单支付成功 orderId={} orderNo={} channel={} pickupCode={} transactionId={}",
                 orderId, order.getOrderNo(), channel, pickupCode, result.getTransactionId());
-        return PayVo.from(orderMapper.selectById(orderId));
+        // 六态之 PAID：发布状态变更（事务内发布 → 提交后投递，避免前端回查读到旧值）
+        Order paid = orderMapper.selectById(orderId);
+        eventPublisher.publishStatusChanged(paid);
+        return PayVo.from(paid);
     }
 
     /**

@@ -40,6 +40,8 @@ import java.util.List;
  *   <li>token 缺失 / 签名失效 / 过期 → 401（UNAUTHORIZED）</li>
  *   <li>角色与路径体系不符（如顾客令牌访问 /api/admin/**）→ 403（FORBIDDEN）</li>
  * </ul>
+ * 令牌来源（T43）：优先 {@code Authorization} 头；无头时 GET 请求可回落查询参数 {@code token}
+ * （浏览器原生 EventSource 不能设请求头，SSE 订阅依赖此回落）。
  */
 @Slf4j
 @Component
@@ -159,18 +161,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return null;
     }
 
+    /**
+     * 取令牌：优先 {@code Authorization} 请求头（REST 主链路）；无头时回落到查询参数 {@code token}。
+     *
+     * <p><b>为何需要查询参数</b>（T43）：浏览器原生 {@code EventSource} 无法设置请求头，
+     * SSE 订阅（{@code /api/customer/orders/events}、{@code /api/admin/board/events}）只能把
+     * 令牌放在 URL 上。回落仅在 {@code GET} 且未携带 {@code Authorization} 时生效，
+     * 其余请求的鉴权口径不变（LLD 9.1 双体系路径矩阵）。</p>
+     */
     private String extractToken(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
-        if (header == null) {
-            return null;
+        if (header != null) {
+            header = header.trim();
+            if (!header.isEmpty()) {
+                if (header.startsWith("Bearer ")) {
+                    String token = header.substring("Bearer ".length()).trim();
+                    return token.isEmpty() ? null : token;
+                }
+                // 兼容无 Bearer 前缀的裸 token
+                return header;
+            }
         }
-        header = header.trim();
-        if (header.startsWith("Bearer ")) {
-            String token = header.substring("Bearer ".length()).trim();
-            return token.isEmpty() ? null : token;
+        if ("GET".equalsIgnoreCase(request.getMethod())) {
+            String queryToken = request.getParameter("token");
+            if (queryToken != null && !queryToken.isBlank()) {
+                return queryToken.trim();
+            }
         }
-        // 兼容无 Bearer 前缀的裸 token
-        return header;
+        return null;
     }
 
     private Principal buildPrincipal(String role, Claims claims) {

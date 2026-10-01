@@ -5,19 +5,26 @@ import { completeOrder, getOrderBoard, startOrder, voidOrder, type OrderBoardRes
 import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 import { useShopStatus } from '@/composables/useShopStatus'
 import { playDing, unlockDing } from '@/utils/ding'
+import { subscribeBoardEvents, type BoardEventSubscription } from '@/utils/order-events'
 import OrderCard from '@/components/board/OrderCard.vue'
 import StatBar from '@/components/board/StatBar.vue'
 
 /**
  * 订单看板（T19，LLD 3.5 / 7.3）：
  * - 今日概览四数 + 双分区（待制作 / 制作中）；
- * - 3 秒轮询 board 接口：比对前后 pending 的 orderId 差集，新增时播提示音并高亮 30 秒；
+ * - 实时通道（T43，LLD 11.1）：优先订阅 SSE `/api/admin/board/events`，收到事件即刷新一次看板
+ *   （新单提醒延迟由推送决定，远优于 5 秒要求）；SSE 不可用时自动回落 3 秒全量轮询，二者互斥；
+ * - 新单判定沿用轮询时代的差集逻辑：比对前后 pending 的 orderId 差集，新增时播提示音并高亮 30 秒；
  * - 行内操作：开始制作 / 出餐（成功后立即刷新、卡片迁移分区）；作废二次确认且必填原因（仅 PAID 卡片）；
- * - visibilitychange：页面切后台暂停轮询省流量，切回立即刷新一次并恢复；
+ * - visibilitychange：页面切后台关闭实时通道省流量，切回立即刷新一次并重新建连；
  * - 暂停接单状态由 useShopStatus 提供（开关在顶栏），本页只展示黄条横幅。
  *
- * 性能：轮询结果做「同内容复用旧对象引用」的差量合并，字段未变的卡片不触发重渲染；
- * 高亮到期在每轮轮询中统一清理，取代原先逐条 setTimeout。
+ * 性能：拉取结果做「同内容复用旧对象引用」的差量合并，字段未变的卡片不触发重渲染；
+ * 高亮到期由单一定时器按最近到期时间清理（见 schedulePrune）——SSE 下刷新由事件驱动，
+ * 不能只依赖刷新触发清理。
+ *
+ * keep-alive：看板被路由缓存（meta.keepAlive），退出/进入走 onDeactivated / onActivated，
+ * 实时通道随之关闭 / 重建；缓存期间不接收后台推送。
  */
 
 defineOptions({ name: 'Board' })
@@ -33,6 +40,10 @@ const highlightedIds = ref<number[]>([])
 const busyIds = ref<number[]>([])
 
 let pollTimer: number | null = null
+/** SSE 订阅句柄（T43）；为 null 表示当前走轮询回落通道 */
+let sseSub: BoardEventSubscription | null = null
+/** 是否已回落到轮询（防止 SSE 重复触发降级导致定时器叠加） */
+let usingPolling = false
 /** 上一轮 pending 的 orderId 集合；null 表示首轮加载（首屏不播提示音、不高亮） */
 let knownPendingIds: Set<number> | null = null
 /** orderId → 高亮到期时间戳（毫秒） */
@@ -161,10 +172,34 @@ async function refreshBoard(): Promise<void> {
   }
 }
 
-/** 新单高亮 30 秒（到期由轮询统一清理）。 */
+/** 新单高亮 30 秒（到期由单一定时器 + 每轮刷新双重清理）。 */
 function markHighlighted(ids: number[], now: number): void {
   for (const id of ids) highlightUntil.set(id, now + HIGHLIGHT_DURATION_MS)
   highlightedIds.value = [...highlightUntil.keys()]
+  schedulePrune()
+}
+
+/** 高亮到期清理定时器：SSE 下刷新由事件驱动，不能只靠刷新触发清理（单一定时器，不逐条 setTimeout） */
+let pruneTimer: number | null = null
+
+/** 按「最近到期时间」排一次清理；到期后重新排下一次。 */
+function schedulePrune(): void {
+  if (pruneTimer !== null || highlightUntil.size === 0) return
+  const now = Date.now()
+  const nearest = Math.min(...highlightUntil.values())
+  pruneTimer = window.setTimeout(() => {
+    pruneTimer = null
+    pruneHighlight(Date.now())
+    schedulePrune()
+  }, Math.max(nearest - now, 0) + 16)
+}
+
+/** 清理高亮到期定时器（卸载时调用）。 */
+function stopPrune(): void {
+  if (pruneTimer !== null) {
+    window.clearTimeout(pruneTimer)
+    pruneTimer = null
+  }
 }
 
 function startPolling(): void {
@@ -179,14 +214,43 @@ function stopPolling(): void {
   }
 }
 
-/** 页面切后台暂停轮询，切回立即刷新并恢复（LLD 7.2）。 */
+/**
+ * 建立实时通道（T43）：先尝试 SSE；判定不可用时由回调切换到 3 秒轮询，二者互斥。
+ * 幂等：已持通道（SSE 或已回落轮询）则直接返回——onMounted 与 onActivated 都会调用，
+ * 否则首屏会「建连 → 关闭 → 再建连」白发一次请求。
+ */
+function startRealtime(): void {
+  if (sseSub !== null || usingPolling) return
+  sseSub = subscribeBoardEvents({
+    onEvent: () => {
+      // 任意事件都刷新一次看板：新单提示音 / 高亮由 refreshBoard 的差集逻辑统一处理
+      void refreshBoard()
+    },
+    onFallback: () => {
+      if (usingPolling) return
+      usingPolling = true
+      sseSub = null
+      startPolling()
+    }
+  })
+}
+
+/** 关闭实时通道（SSE 与轮询一并停掉） */
+function closeRealtime(): void {
+  sseSub?.close()
+  sseSub = null
+  usingPolling = false
+  stopPolling()
+}
+
+/** 页面切后台关闭实时通道，切回立即刷新并重新建连（LLD 7.2）。 */
 function handleVisibilityChange(): void {
   if (!active) return
   if (document.hidden) {
-    stopPolling()
+    closeRealtime()
   } else {
     void refreshBoard()
-    startPolling()
+    startRealtime()
   }
 }
 
@@ -243,22 +307,24 @@ onMounted(() => {
   // 解锁 Web Audio 自动播放（新单提示音依赖用户手势后的 AudioContext）
   unlockDing()
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  startPolling()
+  // SSE 优先（代替 main 的 startPolling）：不可用时由 onFallback 切到 3 秒轮询
+  startRealtime()
 })
 
 onActivated(() => {
   active = true
-  startPolling()
+  startRealtime()
 })
 
 onDeactivated(() => {
   active = false
-  stopPolling()
+  closeRealtime()
 })
 
 onBeforeUnmount(() => {
   active = false
-  stopPolling()
+  closeRealtime()
+  stopPrune()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   highlightUntil.clear()
   pendingCache.clear()

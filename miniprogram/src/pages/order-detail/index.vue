@@ -2,14 +2,21 @@
 import { computed, ref } from 'vue'
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import {
+  subscribeOrderEvents,
+  type OrderEventSubscription,
+  type OrderStatusEvent
+} from '@/utils/order-events'
 import { isActiveStatus, isTerminalStatus, statusLabel, STATUS_TYPE } from '@/utils/order-status'
 
 /**
- * 订单详情（取餐码页，T27，LLD 8.2 / 4.4）：
+ * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1）：
  * - 大号取餐码 + 状态时间线（下单 / 支付 / 制作 / 出餐，未发生的事件置灰）；
- * - 进行中每 3 秒轮询 GET /orders/{id}/status 轻量接口；
- * - COMPLETED / CLOSED / VOIDED 为终态：停止轮询并展示终态文案（COMPLETED → 请取餐）；
- * - 页面切后台（onHide）暂停轮询省流量，切回（onShow）立即刷新一次并恢复。
+ * - 实时通道（T43）：优先订阅 SSE `/api/customer/orders/events?orderId=`，收到事件立即应用载荷并
+ *   补拉一次轻量状态（补齐 seq），出口与轮询一致；SSE 不可用时回落 3 秒轮询 `/{id}/status`，二者互斥；
+ * - 连接建立时后端会补发一条当前状态快照，重连后自动对齐服务端真值；
+ * - COMPLETED / CLOSED / VOIDED 为终态：关闭实时通道并展示终态文案（COMPLETED → 请取餐）；
+ * - 页面切后台（onHide）关闭实时通道省流量，切回（onShow）立即刷新一次并重新建连。
  */
 
 const POLL_INTERVAL_MS = 3000
@@ -22,6 +29,10 @@ const seq = ref<number | null>(null)
 const loading = ref(true)
 
 let pollTimer: number | null = null
+/** SSE 订阅句柄（T43）；为 null 表示当前走轮询回落通道 */
+let subscription: OrderEventSubscription | null = null
+/** 是否已回落到轮询（防止降级回调重复启动定时器） */
+let usingPolling = false
 
 onLoad((query) => {
   const id = Number(query?.id)
@@ -36,15 +47,15 @@ onShow(() => {
   void start()
 })
 
-onHide(() => stopPolling())
-onUnload(() => stopPolling())
+onHide(() => closeRealtime())
+onUnload(() => closeRealtime())
 
-/** 进入页面：拉详情 + 首次状态，随后按需启动轮询 */
+/** 进入页面：拉详情 + 首次状态，随后按需启动实时通道 */
 async function start(): Promise<void> {
   await loadDetail()
   await poll()
   if (isActiveStatus(status.value)) {
-    startPolling()
+    startRealtime()
   }
 }
 
@@ -67,24 +78,80 @@ async function loadDetail(silent = false): Promise<void> {
   }
 }
 
-/** 轮询轻量状态：状态有变化时补拉一次详情（拿制作 / 出餐时间），终态停表 */
+/**
+ * 状态统一应用入口（SSE 与轮询共用，保证两通道出口一致）：
+ * 状态有变化时补拉一次详情（拿制作 / 出餐时间），终态关闭实时通道。
+ *
+ * @param next       新状态（null 表示本次不更新）
+ * @param nextPickup 新取餐码（undefined 表示本次不更新）
+ * @param nextSeq    排队序号（仅轮询通道提供）
+ */
+async function applyStatus(
+  next: string | null,
+  nextPickup: string | null | undefined,
+  nextSeq?: number | null
+): Promise<void> {
+  const previous = status.value
+  if (next) {
+    status.value = next
+  }
+  if (nextPickup !== undefined) {
+    pickupCode.value = nextPickup
+  }
+  if (typeof nextSeq === 'number') {
+    seq.value = nextSeq
+  }
+  if (previous !== status.value) {
+    await loadDetail(true)
+  }
+  if (isTerminalStatus(status.value)) {
+    closeRealtime()
+  }
+}
+
+/** 轮询轻量状态（回落通道）：status + pickupCode + seq 一次取回 */
 async function poll(): Promise<void> {
   if (!orderId.value) return
   try {
     const result = await getOrderStatus(orderId.value)
-    const previous = status.value
-    status.value = result.status
-    pickupCode.value = result.pickupCode
-    seq.value = result.seq
-    if (previous !== result.status) {
-      await loadDetail(true)
-    }
-    if (isTerminalStatus(result.status)) {
-      stopPolling()
-    }
+    await applyStatus(result.status, result.pickupCode, result.seq)
   } catch {
     // 网络抖动不打断：下一轮继续（错误 toast 已由 request 层给出）
   }
+}
+
+/** SSE 事件（增强通道）：先应用事件载荷（立即反馈），再补拉一次轻量状态以补齐 seq */
+async function handleEvent(event: OrderStatusEvent): Promise<void> {
+  await applyStatus(event.status, event.pickupCode)
+  await poll()
+}
+
+/** 建立实时通道（T43）：优先 SSE；不支持或中断时回落 3 秒轮询 */
+function startRealtime(): void {
+  if (!orderId.value) return
+  closeRealtime()
+  subscription = subscribeOrderEvents(orderId.value, {
+    onEvent: (event) => void handleEvent(event),
+    onFallback: () => {
+      if (usingPolling) return
+      usingPolling = true
+      subscription = null
+      startPolling()
+    }
+  })
+  if (!subscription) {
+    // 宿主不支持流式响应：直接回落轮询
+    usingPolling = true
+    startPolling()
+  }
+}
+
+/** 关闭实时通道（SSE 与轮询一并停掉） */
+function closeRealtime(): void {
+  subscription?.close()
+  subscription = null
+  usingPolling = false
+  stopPolling()
 }
 
 function startPolling(): void {
@@ -153,7 +220,7 @@ function continuePay(): void {
         <view class="code-label">取餐码</view>
         <view class="code-value">{{ pickupCode ?? '--' }}</view>
         <view class="code-status" :class="`status-${badgeType}`">{{ statusText }}</view>
-        <view v-if="active" class="code-tip">每 3 秒自动刷新制作进度</view>
+        <view v-if="active" class="code-tip">制作进度实时同步（连接异常时自动切换为轮询）</view>
         <view v-else-if="terminalTip" class="code-tip">{{ terminalTip }}</view>
       </view>
 

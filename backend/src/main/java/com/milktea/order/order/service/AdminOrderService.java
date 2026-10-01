@@ -9,6 +9,7 @@ import com.milktea.order.order.dto.OptionSnapshot;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderItem;
 import com.milktea.order.order.entity.OrderStatus;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.mapper.OrderItemMapper;
 import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.vo.AdminOrderSummaryVo;
@@ -48,6 +49,9 @@ import java.util.stream.Collectors;
  * 按开始时间正序；today 四数口径对齐 SRS 6.5——订单数 / 营业额（扣除当日作废退款额）/
  * 杯数（主饮品件数，即 order_item.quantity 合计）/ 退款额。单店量级直接内存聚合，与
  * T34 统计接口同口径。</p>
+ *
+ * <p><b>实时事件（T43，LLD 11.1）</b>：三个状态动作落定后经 {@link OrderEventPublisher} 发布
+ * （PREPARING / COMPLETED / VOIDED），出餐额外追加 PICKUP_READY；事务内发布、提交后投递。</p>
  */
 @Slf4j
 @Service
@@ -66,6 +70,7 @@ public class AdminOrderService {
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
+    private final OrderEventPublisher eventPublisher;
 
     /**
      * 看板全量查询（3 秒轮询）：双分区卡片 + 今日概览四数。
@@ -176,7 +181,13 @@ public class AdminOrderService {
             throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT);
         }
         log.info("[T14] 商家动作 {} orderId={} {} → {}", event.getLabel(), orderId, from, target);
-        return summary(orderMapper.selectById(orderId));
+        // 六态之 PREPARING / COMPLETED / VOIDED：发布状态变更；出餐再加一条 PICKUP_READY（LLD 11.1）
+        Order updatedOrder = orderMapper.selectById(orderId);
+        eventPublisher.publishStatusChanged(updatedOrder);
+        if (target == OrderStatus.COMPLETED) {
+            eventPublisher.publishPickupReady(updatedOrder);
+        }
+        return summary(updatedOrder);
     }
 
     /** 更新后订单摘要（含商品摘要）。 */

@@ -1,8 +1,10 @@
 package com.milktea.order.order.job;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderStatus;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 超时关单调度（T15，LLD 4.3）：每 60 秒把超时未支付的订单条件更新为 CLOSED。
@@ -31,6 +34,7 @@ import java.time.LocalDateTime;
 public class OrderTimeoutJob {
 
     private final OrderMapper orderMapper;
+    private final OrderEventPublisher eventPublisher;
 
     /** 支付期限（分钟），与 T10 下单响应 expireAt 同源。 */
     @Value("${order.payment-timeout-minutes:15}")
@@ -38,11 +42,23 @@ public class OrderTimeoutJob {
 
     /**
      * 关单调度：{@code fixedDelay} 60 秒（上一轮执行结束后计时的固定间隔，不叠加）。
+     *
+     * <p>T43 补充：为发布「六态之 CLOSED」事件，先取候选单 id（保证还能精确回捞本次被关闭的行，
+     * 不依赖 {@code closed_at} 的时间精度），关单 UPDATE 本身与判定语义完全不变。</p>
      */
     @Scheduled(fixedDelay = 60_000)
     public void closeExpiredOrders() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime deadline = now.minusMinutes(paymentTimeoutMinutes);
+
+        List<Long> candidates = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                        .select(Order::getId)
+                        .eq(Order::getStatus, OrderStatus.PENDING_PAYMENT.name())
+                        .lt(Order::getCreatedAt, deadline))
+                .stream().map(Order::getId).toList();
+        if (candidates.isEmpty()) {
+            return;
+        }
 
         int closed = orderMapper.update(null, Wrappers.<Order>lambdaUpdate()
                 .eq(Order::getStatus, OrderStatus.PENDING_PAYMENT.name())
@@ -51,8 +67,15 @@ public class OrderTimeoutJob {
                 .set(Order::getClosedAt, now)
                 .set(Order::getUpdatedAt, now));
 
-        if (closed > 0) {
-            log.info("[T15] 超时关单 {} 笔（超时阈值 {} 分钟，deadline={}）", closed, paymentTimeoutMinutes, deadline);
+        if (closed == 0) {
+            return;
         }
+        log.info("[T15] 超时关单 {} 笔（超时阈值 {} 分钟，deadline={}）", closed, paymentTimeoutMinutes, deadline);
+
+        // 仅对「确实被本次关闭」的单发布 CLOSED（候选单若在关单前完成支付则状态不是 CLOSED，自然不发）
+        orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                        .in(Order::getId, candidates)
+                        .eq(Order::getStatus, OrderStatus.CLOSED.name()))
+                .forEach(eventPublisher::publishStatusChanged);
     }
 }
