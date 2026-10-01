@@ -2,6 +2,7 @@ package com.milktea.order.order.event;
 
 import com.milktea.order.order.entity.Order;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -38,6 +39,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * 两者都不读取 {@link com.milktea.order.common.jwt.AuthContext}——顾客身份在订阅时已解析为
  * customerId 存入注册表，无需跨线程传递 ScopedValue。SseEmitter 的 send 内部持写锁，多线程
  * 并发下发安全。</p>
+ *
+ * <p><b>非 SSE 出口（T44）</b>：除 SSE 通道外，每条事件还会回调全部 {@link OrderEventListener}
+ * （如微信订阅消息，服务<b>离线顾客</b>）。这是「一个事件体 + 多出口」而非第二套事件——
+ * 两个出口消费同一份 {@link OrderEvent}，口径天然一致（LLD 11.4「两信道内容同源」）。
+ * 监听器异常被逐个隔离，且不阻塞 SSE 下发。</p>
  */
 @Slf4j
 @Component
@@ -48,14 +54,23 @@ public class OrderEventPublisher {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * 订单事件的非 SSE 出口（T44 微信订阅消息等）。
+     *
+     * <p>用 {@link ObjectProvider} 而非 {@code List}：无实现 bean 时（如订阅消息整体未启用、
+     * 装配被裁剪）也<b>不应</b>让发布器启动失败——SSE 是主通道，不能被旁路出口拖垮。</p>
+     */
+    private final ObjectProvider<OrderEventListener> eventListeners;
+
     /** 顾客维度单连接：key = customerId。 */
     private final Map<Long, CustomerChannel> customerChannels = new ConcurrentHashMap<>();
 
     /** 商家维度单连接（单店）。 */
     private final AtomicReference<SseEmitter> adminChannel = new AtomicReference<>();
 
-    public OrderEventPublisher(ObjectMapper objectMapper) {
+    public OrderEventPublisher(ObjectMapper objectMapper, ObjectProvider<OrderEventListener> eventListeners) {
         this.objectMapper = objectMapper;
+        this.eventListeners = eventListeners;
     }
 
     /** 顾客通道：订阅时绑定的订单 id + 连接本体。 */
@@ -145,6 +160,8 @@ public class OrderEventPublisher {
     }
 
     private void dispatch(OrderEvent event, Long customerId) {
+        // 非 SSE 出口（T44 微信订阅消息等）：与 SSE 消费同一份事件体，内容同源（LLD 11.4）
+        notifyListeners(event);
         SseEmitter admin = adminChannel.get();
         if (admin != null) {
             send(admin, event);
@@ -157,6 +174,23 @@ public class OrderEventPublisher {
         if (channel != null && (channel.orderId() == null || channel.orderId().equals(event.orderId()))) {
             send(channel.emitter(), event);
         }
+    }
+
+    /**
+     * 回调全部 {@link OrderEventListener}，逐个隔离异常。
+     *
+     * <p>旁路出口（订阅消息）失败绝不能反噬主链路：SRS 9.3 要求推送失败不影响全流程，
+     * 因此这里吞掉异常并记日志；同时逐个 try-catch，一个监听器抛错不影响其余监听器。</p>
+     */
+    private void notifyListeners(OrderEvent event) {
+        eventListeners.forEach(listener -> {
+            try {
+                listener.onOrderEvent(event);
+            } catch (Exception e) {
+                log.warn("[T44] 订单事件监听器执行失败 listener={} type={} orderId={}：{}",
+                        listener.getClass().getSimpleName(), event.type(), event.orderId(), e.getMessage());
+            }
+        });
     }
 
     private void send(SseEmitter emitter, OrderEvent event) {
