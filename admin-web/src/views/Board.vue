@@ -6,15 +6,18 @@ import { completeOrder, getOrderBoard, startOrder, voidOrder, type OrderBoardRes
 import { getShopStatus, updateShopPause } from '@/api/shop'
 import { useAuthStore } from '@/stores/auth'
 import { playDing, unlockDing } from '@/utils/ding'
+import { subscribeBoardEvents, type BoardEventSubscription } from '@/utils/order-events'
 import OrderCard from '@/components/board/OrderCard.vue'
 import StatBar from '@/components/board/StatBar.vue'
 
 /**
  * 订单看板（T19，LLD 3.5 / 7.3）：
  * - 双分区（待制作 / 制作中）+ 顶栏今日概览四数；
- * - 3 秒轮询 board 接口：比对前后 pending 的 orderId 差集，新增时播提示音并高亮 30 秒；
+ * - 实时通道（T43，LLD 11.1）：优先订阅 SSE `/api/admin/board/events`，收到事件即刷新一次看板
+ *   （新单提醒延迟由推送决定，远优于 5 秒要求）；SSE 不可用时自动回落 3 秒全量轮询，二者互斥；
+ * - 新单判定沿用轮询时代的差集逻辑：比对前后 pending 的 orderId 差集，新增时播提示音并高亮 30 秒；
  * - 行内操作：开始制作 / 出餐（成功后立即刷新、卡片迁移分区）；作废二次确认且必填原因（仅 PAID 卡片）；
- * - visibilitychange：页面切后台暂停轮询省流量，切回立即刷新一次并恢复；
+ * - visibilitychange：页面切后台关闭实时通道省流量，切回立即刷新一次并重新建连；
  * - 暂停接单开关（T23）：顶栏 Switch 一键切换，开启后黄条横幅 + 顾客端 paused=true；
  *   已下单的订单不受影响，看板照常流转。
  */
@@ -38,6 +41,10 @@ const pauseNotice = ref<string | null>(null)
 const pauseBusy = ref(false)
 
 let pollTimer: number | null = null
+/** SSE 订阅句柄（T43）；为 null 表示当前走轮询回落通道 */
+let sseSub: BoardEventSubscription | null = null
+/** 是否已回落到轮询（防止 SSE 重复触发降级导致定时器叠加） */
+let usingPolling = false
 /** 上一轮 pending 的 orderId 集合；null 表示首轮加载（首屏不播提示音、不高亮） */
 let knownPendingIds: Set<number> | null = null
 const highlightTimers = new Map<number, number>()
@@ -85,13 +92,41 @@ function stopPolling(): void {
   }
 }
 
-/** 页面切后台暂停轮询，切回立即刷新并恢复（LLD 7.2）。 */
+/**
+ * 建立实时通道（T43）：先尝试 SSE；判定不可用时由回调切换到 3 秒轮询。
+ * 每次调用前先关闭旧通道，保证「SSE 与轮询互斥」。
+ */
+function startRealtime(): void {
+  closeRealtime()
+  sseSub = subscribeBoardEvents({
+    onEvent: () => {
+      // 任意事件都刷新一次看板：新单提示音 / 高亮由 refreshBoard 的差集逻辑统一处理
+      void refreshBoard()
+    },
+    onFallback: () => {
+      if (usingPolling) return
+      usingPolling = true
+      sseSub = null
+      startPolling()
+    }
+  })
+}
+
+/** 关闭实时通道（SSE 与轮询一并停掉） */
+function closeRealtime(): void {
+  sseSub?.close()
+  sseSub = null
+  usingPolling = false
+  stopPolling()
+}
+
+/** 页面切后台关闭实时通道，切回立即刷新并重新建连（LLD 7.2）。 */
 function handleVisibilityChange(): void {
   if (document.hidden) {
-    stopPolling()
+    closeRealtime()
   } else {
     void refreshBoard()
-    startPolling()
+    startRealtime()
   }
 }
 
@@ -180,12 +215,12 @@ onMounted(() => {
   unlockDing()
   void refreshBoard()
   void loadShopStatus()
-  startPolling()
+  startRealtime()
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onBeforeUnmount(() => {
-  stopPolling()
+  closeRealtime()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   highlightTimers.forEach((timer) => window.clearTimeout(timer))
   highlightTimers.clear()

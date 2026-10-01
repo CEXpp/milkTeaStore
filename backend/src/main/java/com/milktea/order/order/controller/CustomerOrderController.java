@@ -6,6 +6,7 @@ import com.milktea.order.common.jwt.AuthContext;
 import com.milktea.order.common.result.PageResult;
 import com.milktea.order.common.result.R;
 import com.milktea.order.order.dto.OrderCreateRequest;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.service.OrderQueryService;
 import com.milktea.order.order.service.OrderService;
 import com.milktea.order.order.vo.OrderCreateVo;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -34,7 +36,8 @@ import java.util.List;
  *   <li>{@code GET /api/customer/orders/active}（T13）：进行中订单列表（再扫码恢复）；</li>
  *   <li>{@code GET /api/customer/orders}（T13）：历史分页 {list,total,page,size}；</li>
  *   <li>{@code GET /api/customer/orders/{id}}（T13）：详情含订单项快照明细；</li>
- *   <li>{@code GET /api/customer/orders/{id}/status}（T13）：轮询轻量状态 {status,pickupCode,seq}。</li>
+ *   <li>{@code GET /api/customer/orders/{id}/status}（T13）：轮询轻量状态 {status,pickupCode,seq}；</li>
+ *   <li>{@code GET /api/customer/orders/events?orderId=}（T43）：SSE 实时状态通道（轮询的增强通道，二者互为降级）。</li>
  * </ul>
  */
 @RestController
@@ -44,6 +47,7 @@ public class CustomerOrderController {
 
     private final OrderService orderService;
     private final OrderQueryService orderQueryService;
+    private final OrderEventPublisher orderEventPublisher;
 
     /**
      * 创建订单（LLD 3.2）：暂停接单 1006、计价 1001~1003 由服务层抛出，经全局异常处理器返回。
@@ -93,6 +97,24 @@ public class CustomerOrderController {
     @GetMapping("/{id}/status")
     public R<OrderStatusVo> orderStatus(@PathVariable("id") Long id) {
         return R.ok(orderQueryService.status(id, currentCustomerId()));
+    }
+
+    /**
+     * 订单实时事件通道（T43，LLD 11.1）：{@code GET /api/customer/orders/events?orderId={id}}。
+     *
+     * <p>SSE 长连接（{@code text/event-stream}，响应体为 LLD 11.1 事件结构 JSON，<b>不套
+     * 统一 R 响应体</b>——SSE 帧自带 {@code event:} 名与 {@code data:} 负载）。连接建立即补发一条
+     * 当前状态快照（断线重连补齐状态），随后推送该单的状态迁移事件；SSE 不可用时前端回落
+     * {@code /{id}/status} 3 秒轮询。</p>
+     *
+     * <p>归属校验复用 {@link OrderQueryService#status}：订单不存在 1004、非本人 1005
+     * （订阅他人订单在建立连接前即被拒绝，不会泄露事件）。</p>
+     */
+    @GetMapping("/events")
+    public SseEmitter orderEvents(@RequestParam("orderId") Long orderId) {
+        Long customerId = currentCustomerId();
+        OrderStatusVo snapshot = orderQueryService.status(orderId, customerId);
+        return orderEventPublisher.subscribeCustomer(customerId, orderId, snapshot.status(), snapshot.pickupCode());
     }
 
     /** 当前登录顾客 id：由 JWT 过滤器在请求作用域内绑定（防御性判空兜底 401）。 */
