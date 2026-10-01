@@ -23,6 +23,8 @@ export interface BoardPendingOrder {
   totalAmount: string
   paidAt: string
   minutesWaiting: number
+  /** 顾客申报的预计到店时长（分钟，T51「我将到」）；未申报为 null。参与看板建议排序 */
+  etaMinutes: number | null
   /** 顾客是否已申报「我已到店」（T49 到店握手）；仅作提示，不改变排序 */
   arrived: boolean
   /** 申报到店时间；未申报为 null */
@@ -49,11 +51,20 @@ export interface BoardTodaySummary {
   refundAmount: string
 }
 
+/** SLA 预警阈值（T52）：来自 shop_config，随看板响应一起下发（改动后下一次刷新即生效） */
+export interface BoardSlaSettings {
+  /** 转黄阈值（秒） */
+  warnSeconds: number
+  /** 转红阈值（秒）：达到即置顶 */
+  dangerSeconds: number
+}
+
 /** GET /api/admin/orders/board 响应 data */
 export interface OrderBoardResult {
   pending: BoardPendingOrder[]
   preparing: BoardPreparingOrder[]
   today: BoardTodaySummary
+  sla: BoardSlaSettings
 }
 
 /** start / complete / void 响应 data：更新后的订单摘要（字段以看板卡片结构为基准，联调期如有出入以后端为准） */
@@ -114,4 +125,41 @@ export function voidOrder(id: number, data: VoidOrderRequest): Promise<AdminOrde
 /** 柜台人工点单：创建即直接 PAID（当面收款），分配取餐码，customer_id 为 NULL */
 export function createCounterOrder(data: CounterOrderRequest): Promise<CounterOrderResult> {
   return request<CounterOrderResult>({ url: '/admin/counter-orders', method: 'post', data })
+}
+
+/** 出餐核对清单的一行规格（T58） */
+export interface OrderChecklistOption {
+  /** 规格组名：杯型 / 温度 / 甜度 / 加料 */
+  groupName: string
+  optionName: string
+}
+
+/** 出餐核对清单的订单项（T58） */
+export interface OrderChecklistItem {
+  productName: string
+  quantity: number
+  options: OrderChecklistOption[]
+}
+
+/** GET /api/admin/orders/{id}/checklist 响应 data（T58，W20） */
+export interface OrderChecklist {
+  orderId: number
+  orderNo: string
+  pickupCode: string
+  source: OrderSource
+  /** 整单口味备注 */
+  remark: string | null
+  /** 结构化备注标签条数（T53 落地前恒为 0） */
+  remarkTagCount: number
+  items: OrderChecklistItem[]
+}
+
+/**
+ * 出餐核对清单（T58，W20）。
+ *
+ * 规格明细直接取自订单项快照（不经过摘要字符串拼接），因此不会漏掉加料。
+ * **纯只读**：出餐仍走原状态机规则，前端勾选只是防错交互。
+ */
+export function getOrderChecklist(orderId: number): Promise<OrderChecklist> {
+  return request<OrderChecklist>({ url: `/admin/orders/${orderId}/checklist`, method: 'get' })
 }

@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { completeOrder, getOrderBoard, startOrder, voidOrder, type OrderBoardResult } from '@/api/order'
+import {
+  completeOrder,
+  getOrderBoard,
+  getOrderChecklist,
+  startOrder,
+  voidOrder,
+  type BoardSlaSettings,
+  type OrderBoardResult,
+  type OrderChecklist
+} from '@/api/order'
 import { getQueuePace, type QueuePace } from '@/api/queue'
+import { updateSla } from '@/api/shop'
 import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 import { useShopStatus } from '@/composables/useShopStatus'
 import { playDing, unlockDing } from '@/utils/ding'
@@ -39,6 +49,24 @@ const { paused, notice, ensureLoaded, setPaused } = useShopStatus()
 const board = ref<OrderBoardResult | null>(null)
 /** 接单节奏建议（T48）：只读提示——超阈值仅「建议」暂停，系统绝不自动执行 */
 const pace = ref<QueuePace | null>(null)
+
+/** SLA 阈值（T52）：随看板响应下发；单独存一份，避免受 board 的差量合并影响 */
+const sla = ref<BoardSlaSettings>({ warnSeconds: 300, dangerSeconds: 600 })
+/** 秒级时间戳：统一驱动各卡片的等待时长 mm:ss（卡片不各自起定时器） */
+const nowTs = ref(Date.now())
+let tickTimer: number | null = null
+
+/** SLA 阈值设置弹窗（T52） */
+const slaDialogVisible = ref(false)
+const slaSaving = ref(false)
+const slaForm = reactive({ warnSeconds: 300, dangerSeconds: 600 })
+
+/** 出餐核对清单（T58）：出餐前逐项勾选，全勾完才允许确认——纯前端防错，不动状态机 */
+const checklistVisible = ref(false)
+const checklistLoading = ref(false)
+const checklistOrderId = ref<number | null>(null)
+const checklist = ref<OrderChecklist | null>(null)
+const checkedKeys = ref<string[]>([])
 const highlightedIds = ref<number[]>([])
 const busyIds = ref<number[]>([])
 
@@ -156,6 +184,8 @@ async function refreshBoard(): Promise<void> {
     }
     knownPendingIds = pendingIds
     pruneHighlight(now)
+    // SLA 阈值随响应下发（T52）：单独存一份，商家改阈值后下一次刷新立即生效
+    sla.value = data.sla
 
     const prev = board.value
     const pending = mergePending(data.pending)
@@ -168,7 +198,13 @@ async function refreshBoard(): Promise<void> {
       prev.today.refundAmount !== data.today.refundAmount
     // 订单列表与今日概览都没变化时保留原对象引用，卡片与 KPI 卡便不会重渲染
     if (pending.changed || preparing.changed || todayChanged) {
-      board.value = { pending: pending.list, preparing: preparing.list, today: data.today }
+      board.value = {
+        pending: pending.list,
+        preparing: preparing.list,
+        today: data.today,
+        // 契约要求该字段存在；预警实际读的是上面单独的 sla ref（不受差量合并影响）
+        sla: data.sla
+      }
     }
     // 顺带刷新接单节奏（T48）：失败静默，不污染看板主流程
     void loadPace()
@@ -183,6 +219,55 @@ async function loadPace(): Promise<void> {
     pace.value = await getQueuePace()
   } catch {
     pace.value = null
+  }
+}
+
+/** 秒级心跳（T52）：只更新一个时间戳，各卡片据此自算等待时长，避免每张卡片各起定时器 */
+function startTick(): void {
+  if (tickTimer !== null) {
+    return
+  }
+  tickTimer = window.setInterval(() => {
+    nowTs.value = Date.now()
+  }, 1000)
+}
+
+function stopTick(): void {
+  if (tickTimer !== null) {
+    window.clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+/** 打开 SLA 阈值设置（T52）：以当前生效值为初始值 */
+function openSlaDialog(): void {
+  slaForm.warnSeconds = sla.value.warnSeconds
+  slaForm.dangerSeconds = sla.value.dangerSeconds
+  slaDialogVisible.value = true
+}
+
+/**
+ * 保存 SLA 阈值（T52）：写入 shop_config 后由后端随看板下发，
+ * 故保存后立即刷新一次看板，预警即刻按新阈值显示（验收项「阈值改动后预警即时生效」）。
+ */
+async function saveSla(): Promise<void> {
+  if (slaForm.dangerSeconds <= slaForm.warnSeconds) {
+    ElMessage.warning('转红阈值必须大于转黄阈值')
+    return
+  }
+  slaSaving.value = true
+  try {
+    sla.value = await updateSla({
+      warnSeconds: slaForm.warnSeconds,
+      dangerSeconds: slaForm.dangerSeconds
+    })
+    slaDialogVisible.value = false
+    ElMessage.success('SLA 阈值已更新')
+    void refreshBoard()
+  } catch {
+    // 错误提示已由 request 层直显（如 1001 阈值不合法）
+  } finally {
+    slaSaving.value = false
   }
 }
 
@@ -308,7 +393,57 @@ function handleStart(orderId: number): void {
   void runAction(orderId, () => startOrder(orderId), '已开始制作')
 }
 
-function handleComplete(orderId: number): void {
+/** 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾 */
+const checklistLines = computed(() => {
+  const lines: Array<{ key: string; text: string }> = []
+  checklist.value?.items.forEach((item, itemIndex) => {
+    item.options.forEach((option, optionIndex) => {
+      lines.push({
+        key: `${itemIndex}-${optionIndex}`,
+        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`
+      })
+    })
+  })
+  return lines
+})
+
+/** 全部勾完才允许确认出餐；无规格明细时视为已勾完，避免无谓卡死 */
+const checklistAllChecked = computed(
+  () => checklistLines.value.length === 0 || checkedKeys.value.length >= checklistLines.value.length
+)
+
+/**
+ * 出餐（T58）：先拉核对清单并弹窗逐项勾选，全部勾完才允许确认。
+ *
+ * 说明：这只是**前端防错交互**——后端出餐仍按 6.1 原规则校验，状态机规则一字未改
+ * （任务卡「确认不是状态迁移的前置条件」）。
+ */
+async function handleComplete(orderId: number): Promise<void> {
+  if (checklistLoading.value) {
+    return
+  }
+  checklistLoading.value = true
+  try {
+    checklist.value = await getOrderChecklist(orderId)
+    checklistOrderId.value = orderId
+    checkedKeys.value = []
+    checklistVisible.value = true
+  } catch {
+    // 拉取失败已由 request 层提示；此处不直接出餐，避免跳过核对
+  } finally {
+    checklistLoading.value = false
+  }
+}
+
+/** 确认出餐：走原有动作通道（含 busy 防抖 + 成功后刷新看板） */
+function confirmComplete(): void {
+  const orderId = checklistOrderId.value
+  checklistVisible.value = false
+  checklist.value = null
+  checklistOrderId.value = null
+  if (orderId === null) {
+    return
+  }
   void runAction(orderId, () => completeOrder(orderId), '已出餐')
 }
 
@@ -344,22 +479,27 @@ onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   // SSE 优先（代替 main 的 startPolling）：不可用时由 onFallback 切到 3 秒轮询
   startRealtime()
+  // 秒级心跳：驱动 SLA 等待时长刷新（T52）
+  startTick()
 })
 
 onActivated(() => {
   active = true
   startRealtime()
+  startTick()
 })
 
 onDeactivated(() => {
   active = false
   closeRealtime()
+  stopTick()
 })
 
 onBeforeUnmount(() => {
   active = false
   closeRealtime()
   stopPrune()
+  stopTick()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   highlightUntil.clear()
   pendingCache.clear()
@@ -370,6 +510,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="board-page">
     <StatBar :today="board?.today ?? null" />
+
+    <!-- SLA 预警阈值入口（T52）：阈值随看板响应下发，改完下一次刷新即生效 -->
+    <div class="board-toolbar">
+      <span class="toolbar-tip">
+        SLA 预警：{{ sla.warnSeconds }} 秒转黄 / {{ sla.dangerSeconds }} 秒转红并置顶
+      </span>
+      <el-button link type="primary" size="small" @click="openSlaDialog">修改阈值</el-button>
+    </div>
 
     <!-- 动态接单节奏（T48）：按队列阈值提示压力；超阈值仅「建议」暂停，系统绝不自动执行 -->
     <div
@@ -419,6 +567,9 @@ onBeforeUnmount(() => {
           mode="pending"
           :highlighted="highlightedIds.includes(order.orderId)"
           :busy="busyIds.includes(order.orderId)"
+          :now-ts="nowTs"
+          :warn-seconds="sla.warnSeconds"
+          :danger-seconds="sla.dangerSeconds"
           @start="handleStart"
           @void="handleVoid"
         />
@@ -444,6 +595,48 @@ onBeforeUnmount(() => {
         />
       </section>
     </main>
+
+    <!-- SLA 阈值设置（T52）：写入 shop_config，保存后看板立即按新阈值预警 -->
+    <el-dialog v-model="slaDialogVisible" title="SLA 预警阈值" width="380px">
+      <el-form label-width="120px">
+        <el-form-item label="转黄阈值（秒）">
+          <el-input-number v-model="slaForm.warnSeconds" :min="10" :max="86400" :step="30" />
+        </el-form-item>
+        <el-form-item label="转红阈值（秒）">
+          <el-input-number v-model="slaForm.dangerSeconds" :min="10" :max="86400" :step="30" />
+        </el-form-item>
+        <p class="sla-tip">转红须大于转黄；达到转红即在待制作区置顶。</p>
+      </el-form>
+      <template #footer>
+        <el-button @click="slaDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="slaSaving" @click="saveSla">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 出餐核对清单（T58）：逐项勾选，全勾完才可确认。纯前端防错，后端状态机规则不变 -->
+    <el-dialog v-model="checklistVisible" title="出餐核对" width="440px">
+      <div v-if="checklist" class="checklist">
+        <div class="checklist-head">
+          <span>取餐码 <strong>{{ checklist.pickupCode }}</strong></span>
+          <span v-if="checklist.remarkTagCount > 0" class="special-tag">
+            本单有 {{ checklist.remarkTagCount }} 项特殊要求
+          </span>
+        </div>
+        <p v-if="checklist.remark" class="checklist-remark">备注：{{ checklist.remark }}</p>
+        <el-checkbox-group v-model="checkedKeys" class="checklist-body">
+          <el-checkbox v-for="line in checklistLines" :key="line.key" :label="line.key">
+            {{ line.text }}
+          </el-checkbox>
+        </el-checkbox-group>
+        <p v-if="!checklistLines.length" class="checklist-empty">该单无规格明细</p>
+      </div>
+      <template #footer>
+        <el-button @click="checklistVisible = false">取消</el-button>
+        <el-button type="success" :disabled="!checklistAllChecked" @click="confirmComplete">
+          确认出餐
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -452,6 +645,69 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-4);
+}
+
+/* SLA 阈值工具栏（T52）：只读展示当前阈值 + 一个设置入口 */
+.board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding: 8px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.toolbar-tip {
+  line-height: 1.6;
+}
+
+.sla-tip {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+/* 出餐核对清单（T58） */
+.checklist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+}
+
+.special-tag {
+  padding: 2px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--c-danger);
+  border-radius: var(--radius-pill);
+}
+
+.checklist-remark {
+  margin: 0 0 var(--gap-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.checklist-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.checklist-empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
 }
 
 /* 动态接单节奏横幅（T48）：偏忙=黄、拥挤=红；只提示、不执行 */

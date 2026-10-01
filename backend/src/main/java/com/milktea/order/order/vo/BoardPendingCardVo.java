@@ -36,6 +36,14 @@ public class BoardPendingCardVo implements Serializable {
     private long minutesWaiting;
 
     /**
+     * 顾客申报的预计到店时长（分钟，T51「我将到」）；未申报为 {@code null}。
+     *
+     * <p>与 {@link #arrived} 不同，它<b>参与</b>本分区的建议排序（到达近的优先）——
+     * 这是 T51 的验收要求；未申报的一律按支付时间排（先付先做）。</p>
+     */
+    private Integer etaMinutes;
+
+    /**
      * 顾客是否已申报到店（T49 到店握手）。
      *
      * <p>仅作**提示**：卡片会打上「已到店」标记、排序保持不变（验收项「不强制改排序」）。

@@ -91,6 +91,8 @@ export interface OrderDetail {
   closedAt: string | null
   voidedAt: string | null
   voidReason: string | null
+  /** 顾客申报的预计到店时长（分钟，T51「我将到」）；未申报为 null */
+  etaMinutes: number | null
   items: OrderDetailItem[]
 }
 
@@ -141,6 +143,28 @@ export function arriveOrder(orderId: number): Promise<OrderArrivalResult> {
   })
 }
 
+/** POST /api/customer/orders/{id}/eta 响应 data（T51 到店预约） */
+export interface OrderEtaResult {
+  orderId: number
+  /** 生效的预计到店时长（分钟）；撤销后为 null */
+  etaMinutes: number | null
+}
+
+/**
+ * 申报 / 修改 / 撤销「我到店还需 X 分钟」（T51，W02「我将到」）。
+ *
+ * 看板据此给出**建议制作顺序**（到达近的优先）；不申报时与既往「先付先做」逐字一致。
+ * 传 `null` 即撤销。仅 PAID / PREPARING 可申报，时长仅支持 3 / 5 / 10。
+ */
+export function updateOrderEta(orderId: number, etaMinutes: number | null): Promise<OrderEtaResult> {
+  return request<OrderEtaResult>({
+    url: `/api/customer/orders/${orderId}/eta`,
+    method: 'POST',
+    data: { etaMinutes },
+    auth: true
+  })
+}
+
 /** 进行中订单列表（PENDING_PAYMENT / PAID / PREPARING） */
 export function getActiveOrders(): Promise<OrderListItem[]> {
   return request<OrderListItem[]>({ url: '/api/customer/orders/active', auth: true })
@@ -162,4 +186,34 @@ export function getOrderDetail(orderId: number): Promise<OrderDetail> {
 /** 轮询订单轻量状态 */
 export function getOrderStatus(orderId: number): Promise<OrderStatusResult> {
   return request<OrderStatusResult>({ url: `/api/customer/orders/${orderId}/status`, auth: true })
+}
+
+/** 时间轴节点（T50，W03） */
+export interface OrderTimelineNode {
+  /** CREATED / PAID / PREPARING / COMPLETED / CLOSED / VOIDED */
+  key: string
+  label: string
+  /** yyyy-MM-dd HH:mm:ss；未发生为 null */
+  time: string | null
+  /** 距上一节点耗时（秒）；首节点或未发生为 null */
+  durationSeconds: number | null
+  done: boolean
+}
+
+/** GET /api/customer/orders/{id}/timeline 响应 data（T50） */
+export interface OrderTimeline {
+  orderId: number
+  status: string
+  source: string
+  nodes: OrderTimelineNode[]
+  /** 本单制作耗时（分钟）；未完成为 null */
+  myPrepMinutes: number | null
+  /** 同渠道同日制作耗时中位数（分钟）；无样本为 null */
+  medianPrepMinutes: number | null
+  medianSampleCount: number
+}
+
+/** 订单全生命周期时间轴（T50，W03）：六时间戳 + 每段耗时 + 同渠道同日中位数对比 */
+export function getOrderTimeline(orderId: number): Promise<OrderTimeline> {
+  return request<OrderTimeline>({ url: `/api/customer/orders/${orderId}/timeline`, auth: true })
 }

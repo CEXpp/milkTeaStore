@@ -40,27 +40,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
-    # @SpringBootTest 启动上下文需要真实数据库；Flyway 会在启动时执行 db/migration 下的迁移脚本
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: milk_tea
-          TZ: Asia/Shanghai
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -proot --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-
-    env:
-      # 覆盖 application-dev.yml 中的外网库地址，指向上面的服务容器
-      SPRING_DATASOURCE_URL: "jdbc:mysql://127.0.0.1:3306/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
+    # 后端单测全部自包含，无需外部 MySQL：
+    #   · PricingServiceTest 用 Mockito，无数据库；
+    #   · SequenceServiceTest 用内存 H2（MODE=MySQL），数据源在测试内钉死。
+    # 故不再启动 MySQL 服务容器，流水线更快、自包含。
+    # 若后续新增依赖真实库的集成测试，恢复 services.mysql 并用下方 env 覆盖数据源：
+    #   SPRING_DATASOURCE_URL: "jdbc:mysql://127.0.0.1:3306/milk_tea?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
+    #   SPRING_DATASOURCE_USERNAME: root
+    #   SPRING_DATASOURCE_PASSWORD: root
 
     steps:
       - name: 检出代码

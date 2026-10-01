@@ -129,6 +129,8 @@ public class OrderQueryService {
         vo.setClosedAt(format(order.getClosedAt()));
         vo.setVoidedAt(format(order.getVoidedAt()));
         vo.setVoidReason(order.getVoidReason());
+        // T51「我将到」：顾客申报的预计到店时长，前端据此回显已选的快捷项
+        vo.setEtaMinutes(order.getEtaMinutes());
 
         List<OrderDetailItemVo> itemVos = new ArrayList<>(items.size());
         for (OrderItem item : items) {

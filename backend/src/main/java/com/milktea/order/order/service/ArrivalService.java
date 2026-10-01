@@ -6,6 +6,7 @@ import com.milktea.order.common.exception.ErrorCode;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderStatus;
 import com.milktea.order.order.mapper.OrderMapper;
+import com.milktea.order.order.vo.ArrivalEtaVo;
 import com.milktea.order.order.vo.ArrivalVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 到店握手（T49，W19「诚实的不确定性 + 到店握手」）。
@@ -46,6 +48,14 @@ public class ArrivalService {
      */
     private static final List<String> ARRIVABLE_STATUSES =
             List.of(OrderStatus.PAID.name(), OrderStatus.PREPARING.name());
+
+    /**
+     * 允许申报的预计到店时长（分钟，T51）。
+     *
+     * <p>前端只给 3 / 5 / 10 三个快捷项，服务端做二次校验——否则任意数值都能塞进
+     * {@code eta_minutes}，看板的建议排序就失去了业务含义。</p>
+     */
+    private static final Set<Integer> ALLOWED_ETA_MINUTES = Set.of(3, 5, 10);
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -92,5 +102,46 @@ public class ArrivalService {
         }
         log.info("[T49] 顾客申报到店 orderId={} customerId={}", orderId, customerId);
         return new ArrivalVo(orderId, now.format(FMT), true);
+    }
+
+    /**
+     * 申报 / 修改 / 撤销「我到店还需 X 分钟」（T51，W02「我将到」）。
+     *
+     * <p>与 {@link #arrive} 一样只写一个<b>信号</b>：不推进状态机、不影响超时关单、不进统计。
+     * 但它与「我已到店」的差别在于——<b>它会参与看板的建议制作顺序</b>（到达近的优先），
+     * 这正是 T51 的验收要求；而「我已到店」不参与排序（T49 验收「不强制改排序」）。</p>
+     *
+     * <p><b>可改可撤</b>：重复申报直接覆盖；传 {@code null} 撤销，看板随即回到「先付先做」
+     * 的原始顺序（验收「不申报时与现状一致」）。</p>
+     *
+     * @param orderId    订单主键
+     * @param customerId 当前登录顾客
+     * @param etaMinutes 3 / 5 / 10；{@code null} 表示撤销
+     * @throws BusinessException 1001 时长不在允许集合；1004 订单不存在 / 状态不可申报；1005 非本人订单
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ArrivalEtaVo updateEta(Long orderId, Long customerId, Integer etaMinutes) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT.getCode(), "订单不存在");
+        }
+        if (!Objects.equals(order.getCustomerId(), customerId)) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_BELONG);
+        }
+        if (!ARRIVABLE_STATUSES.contains(order.getStatus())) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT.getCode(), "当前订单状态无需申报到店时间");
+        }
+        if (etaMinutes != null && !ALLOWED_ETA_MINUTES.contains(etaMinutes)) {
+            // 服务端二次校验：前端只给 3/5/10 三个快捷项，此处防绕过
+            throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "预计到店时间仅支持 3 / 5 / 10 分钟");
+        }
+
+        // set 无条件赋值：etaMinutes 为 null 时即写库为 NULL（撤销语义）
+        orderMapper.update(null, Wrappers.<Order>lambdaUpdate()
+                .eq(Order::getId, orderId)
+                .set(Order::getEtaMinutes, etaMinutes)
+                .set(Order::getUpdatedAt, LocalDateTime.now()));
+        log.info("[T51] 到店时间申报 orderId={} customerId={} etaMinutes={}", orderId, customerId, etaMinutes);
+        return new ArrivalEtaVo(orderId, etaMinutes);
     }
 }

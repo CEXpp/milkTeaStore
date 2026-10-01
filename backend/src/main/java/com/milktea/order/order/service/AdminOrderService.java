@@ -17,10 +17,14 @@ import com.milktea.order.order.vo.BoardPendingCardVo;
 import com.milktea.order.order.vo.BoardPreparingCardVo;
 import com.milktea.order.order.vo.BoardTodayVo;
 import com.milktea.order.order.vo.BoardVo;
+import com.milktea.order.order.vo.OrderChecklistVo;
+import com.milktea.order.shop.service.SlaSettingsService;
+import com.milktea.order.shop.vo.SlaSettingsVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -31,6 +35,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -71,6 +76,7 @@ public class AdminOrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderEventPublisher eventPublisher;
+    private final SlaSettingsService slaSettingsService;
 
     /**
      * 看板全量查询（3 秒轮询）：双分区卡片 + 今日概览四数。
@@ -78,10 +84,14 @@ public class AdminOrderService {
     public BoardVo board() {
         LocalDateTime now = LocalDateTime.now();
 
+        // SLA 阈值（T52）：先取出来——它既参与排序（转红置顶），也要随响应下发给前端
+        SlaSettingsVo sla = slaSettingsService.current();
+
         List<Order> pendingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getStatus, OrderStatus.PAID.name())
-                .orderByAsc(Order::getPaidAt)
-                .orderByAsc(Order::getId));
+                .eq(Order::getStatus, OrderStatus.PAID.name()));
+        // 排序改到内存（T51/T52）：规则含「转红置顶」与「已申报到店时间优先」，
+        // 用 Comparator 比拼 SQL 直观；单店量级下内存排序没有性能压力。
+        pendingOrders.sort(pendingComparator(sla.dangerSeconds(), now));
         List<Order> preparingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, OrderStatus.PREPARING.name())
                 .orderByAsc(Order::getStartedAt)
@@ -117,7 +127,44 @@ public class AdminOrderService {
                         Duration.between(order.getStartedAt(), now).toMinutes()))
                 .collect(Collectors.toList()));
         board.setToday(buildToday(todayOrders, todayVoided, itemMap));
+        board.setSla(sla);
         return board;
+    }
+
+    /**
+     * 待制作分区的排序（T51 / T52）。
+     *
+     * <pre>
+     *   1) 已等待超过 danger 阈值的<b>置顶</b>（T52 验收「超 danger 转红并置顶」）
+     *   2) 其余中：已申报预计到店时长的在前，按到达临近度升序（3 &lt; 5 &lt; 10 分钟）（T51）
+     *   3) 最后按 paid_at 升序、id 升序 —— 即 LLD 3.5 的「先付先做」
+     * </pre>
+     *
+     * <p>第 3 条保证「不申报时与现状一致」：所有订单 {@code etaMinutes} 均为 null 且无人超 danger 时，
+     * 本比较器退化为纯粹的 paid_at + id 排序，与改动前<b>逐字相同</b>（T51 验收项）。</p>
+     *
+     * <p>SLA 优先于到店预约：SLA 是硬指标（顾客已经等太久了），到店预约只是「建议顺序」。</p>
+     *
+     * <p>注意 {@code arrivedAt}（「我已到店」）<b>不</b>参与本排序——那是 T49 的验收要求。</p>
+     */
+    private Comparator<Order> pendingComparator(int dangerSeconds, LocalDateTime now) {
+        return Comparator
+                .comparingInt((Order order) -> isSlaDanger(order, dangerSeconds, now) ? 0 : 1)
+                .thenComparingInt((Order order) -> order.getEtaMinutes() == null ? 1 : 0)
+                .thenComparing(Order::getEtaMinutes, Comparator.nullsLast(Comparator.<Integer>naturalOrder()))
+                .thenComparing(Order::getPaidAt, Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder()))
+                .thenComparing(Order::getId);
+    }
+
+    /**
+     * 是否已超 SLA 转红阈值（T52）。
+     *
+     * <p>只看「已等待时长」，不做任何状态判定、不写任何字段——因此与 6.1 状态流转完全无关
+     * （任务卡验收「与 6.1 状态流转不冲突」）。</p>
+     */
+    private boolean isSlaDanger(Order order, int dangerSeconds, LocalDateTime now) {
+        return order.getPaidAt() != null
+                && Duration.between(order.getPaidAt(), now).getSeconds() >= dangerSeconds;
     }
 
     /**
@@ -212,6 +259,72 @@ public class AdminOrderService {
         return vo;
     }
 
+    /**
+     * 出餐核对清单（T58，W20）。
+     *
+     * <p><b>只读</b>：不改订单状态、不做任何校验判定——出餐仍由 {@link #complete(Long)} 按 6.1
+     * 原规则走状态机。勾选清单纯粹是前端的防错交互（任务卡「确认不是状态迁移的前置条件」）。</p>
+     *
+     * <p>规格明细直接取自 {@code order_item.options_snapshot}，<b>不经过任何摘要字符串拼接</b>，
+     * 因此不会「漏掉加料」（验收项「清单与快照完全一致」）。</p>
+     *
+     * @throws BusinessException 1004 订单不存在
+     */
+    public OrderChecklistVo checklist(Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT.getCode(), "订单不存在");
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .orderByAsc(OrderItem::getId));
+
+        List<OrderChecklistVo.Item> itemVos = new ArrayList<>(items.size());
+        for (OrderItem item : items) {
+            itemVos.add(new OrderChecklistVo.Item(
+                    item.getProductName(),
+                    item.getQuantity() == null ? 0 : item.getQuantity(),
+                    optionLines(item.getOptionsSnapshot())));
+        }
+        return new OrderChecklistVo(orderId, order.getOrderNo(), order.getPickupCode(), order.getSource(),
+                order.getRemark(), countRemarkTags(order.getRemarkTags()), itemVos);
+    }
+
+    /** 规格快照 → 逐行规格（保留分组名，前端据此把「加料」等易漏项标出来）。 */
+    private List<OrderChecklistVo.OptionLine> optionLines(String json) {
+        if (json == null || json.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            OptionSnapshot[] arr = JSON.readValue(json, OptionSnapshot[].class);
+            if (arr == null) {
+                return Collections.emptyList();
+            }
+            List<OrderChecklistVo.OptionLine> lines = new ArrayList<>(arr.length);
+            for (OptionSnapshot option : arr) {
+                lines.add(new OrderChecklistVo.OptionLine(option.getGroupName(), option.getOptionName()));
+            }
+            return lines;
+        } catch (Exception e) {
+            log.warn("[T58] 规格快照解析失败，核对清单按空规格返回：{}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /** 结构化备注标签条数（T42 的 {@code orders.remark_tags}；T53 落地前恒为 0）。 */
+    private int countRemarkTags(String json) {
+        if (json == null || json.isBlank()) {
+            return 0;
+        }
+        try {
+            JsonNode node = JSON.readTree(json);
+            return node != null && node.isArray() ? node.size() : 0;
+        } catch (Exception e) {
+            log.warn("[T58] 备注标签解析失败，按 0 处理：{}", e.getMessage());
+            return 0;
+        }
+    }
+
     private BoardPendingCardVo toPendingCard(Order order, List<OrderItem> items, long minutes) {
         BoardPendingCardVo card = new BoardPendingCardVo();
         card.setOrderId(order.getId());
@@ -221,7 +334,9 @@ public class AdminOrderService {
         card.setTotalAmount(MoneyUtils.format(order.getTotalAmount()));
         card.setPaidAt(format(order.getPaidAt()));
         card.setMinutesWaiting(Math.max(minutes, 0));
-        // 到店握手信号（T49）：只打标记——排序仍是 LLD 3.5 的「先付先做」，一成不变
+        // 到店预约（T51）：「我将到」参与建议排序，故随卡片一并下发给前端展示标识
+        card.setEtaMinutes(order.getEtaMinutes());
+        // 到店握手（T49）：「我已到店」只打标记，不参与排序（验收项「不强制改排序」）
         card.setArrived(order.getArrivedAt() != null);
         card.setArrivedAt(format(order.getArrivedAt()));
         return card;

@@ -43,8 +43,13 @@ public class ShopConfigService {
         return paused;
     }
 
-    /** 按键 upsert：存在则更新，不存在则插入（shop_config 为 KV 表，无 Flyway 预置键时也能自愈）。 */
-    private void upsert(String key, String value) {
+    /**
+     * 按键 upsert：存在则更新，不存在则插入（shop_config 为 KV 表，无 Flyway 预置键时也能自愈）。
+     *
+     * <p>public 供同域其他配置读写服务复用（如 T52 的 SLA 阈值），
+     * 避免「KV 写入」这件事出现第二份实现。</p>
+     */
+    public void upsert(String key, String value) {
         ShopConfig existing = shopConfigMapper.selectOne(new LambdaQueryWrapper<ShopConfig>()
                 .eq(ShopConfig::getConfigKey, key)
                 .last("LIMIT 1"));
