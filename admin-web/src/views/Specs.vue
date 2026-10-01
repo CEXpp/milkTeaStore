@@ -156,12 +156,9 @@ onMounted(() => {
 
 <template>
   <div class="specs-page">
-    <AdminPageHeader title="规格模板" />
-    <div class="page-body" v-loading="loading">
-      <div class="tip">
-        四组系统模板不可删除；停用选项或整组后，顾客端菜单立即不再返回相应可选集。
-      </div>
+    <AdminPageHeader title="规格模板" subtitle="停用后顾客端菜单立即不再返回相应可选集" />
 
+    <div class="page-body" v-loading="loading">
       <el-card v-for="group in groups" :key="group.id" class="group-card" shadow="never">
         <template #header>
           <div class="group-header">
@@ -181,7 +178,7 @@ onMounted(() => {
           </div>
         </template>
 
-        <el-table :data="group.options" size="small" border>
+        <el-table :data="group.options" size="small">
           <el-table-column prop="name" label="选项名称" min-width="140" />
           <el-table-column label="价差" width="110" align="right">
             <template #default="{ row }">
@@ -208,18 +205,19 @@ onMounted(() => {
             </template>
           </el-table-column>
           <template #empty>
-            <el-empty description="该组暂无规格项" :image-size="60" />
+            <el-empty description="该组暂无规格项" :image-size="60" class="app-empty" />
           </template>
         </el-table>
       </el-card>
 
-      <el-empty v-if="!loading && !groups.length" description="暂无规格组" />
+      <el-empty v-if="!loading && !groups.length" description="暂无规格组" class="app-empty" />
     </div>
 
     <el-dialog
       v-model="optionDialogVisible"
       :title="editingOptionId === null ? '新增规格项' : '编辑规格项'"
       width="440px"
+      align-center
     >
       <el-form ref="optionFormRef" :model="optionForm" :rules="optionRules" label-width="88px">
         <el-form-item label="名称" prop="name">
@@ -243,7 +241,7 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="groupDialogVisible" title="编辑规格组" width="440px">
+    <el-dialog v-model="groupDialogVisible" title="编辑规格组" width="440px" align-center>
       <el-form ref="groupFormRef" :model="groupForm" :rules="groupRules" label-width="88px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="groupForm.name" maxlength="32" />
@@ -267,27 +265,19 @@ onMounted(() => {
 
 <style scoped>
 .specs-page {
-  min-height: 100%;
-  padding: 16px;
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-body {
-  padding: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-}
-
-.tip {
-  margin-bottom: 12px;
-  font-size: 12px;
-  color: #909399;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
+  min-height: 120px;
 }
 
 .group-card {
-  margin-bottom: 14px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--border);
 }
 
 .group-header {
@@ -295,39 +285,40 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .group-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .group-name {
-  font-size: 15px;
+  font-size: var(--fs-h2);
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .group-code {
-  font-size: 12px;
-  color: #c0c4cc;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .group-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .sort-hint {
-  font-size: 12px;
-  color: #909399;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .unit {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #909399;
+  margin-left: var(--gap-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 </style>

@@ -1,0 +1,6 @@
+# 不把这些送进构建上下文（node_modules 上万文件，不排除会拖慢构建）
+node_modules/
+dist/
+*.log
+.vscode/
+.idea/

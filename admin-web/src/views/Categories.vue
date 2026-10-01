@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import {
   createCategory,
   deleteCategory,
@@ -106,19 +107,21 @@ onMounted(() => {
 
 <template>
   <div class="categories-page">
-    <AdminPageHeader title="分类管理">
-      <el-button type="primary" @click="openCreate">新建分类</el-button>
+    <AdminPageHeader title="分类管理" subtitle="排序决定顾客端菜单分组顺序">
+      <el-button type="primary" :icon="Plus" @click="openCreate">新建分类</el-button>
     </AdminPageHeader>
 
-    <main class="page-body">
-      <div class="tip">分类顺序决定顾客端菜单的分组顺序；分类下仍有商品时不可删除。</div>
+    <main class="app-panel">
+      <div class="tip">
+        分类顺序决定顾客端菜单的分组顺序；分类下仍有商品时不可删除。
+      </div>
 
-      <el-table v-loading="loading" :data="categories" border stripe>
+      <el-table v-loading="loading" :data="categories">
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column prop="sortOrder" label="排序" width="100" align="center" />
         <el-table-column label="商品数" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.productCount > 0 ? 'info' : 'success'" effect="plain">
+            <el-tag :type="row.productCount > 0 ? 'info' : 'success'" effect="plain" size="small">
               {{ row.productCount }}
             </el-tag>
           </template>
@@ -132,12 +135,7 @@ onMounted(() => {
               placement="top"
             >
               <span>
-                <el-button
-                  link
-                  type="danger"
-                  :disabled="row.productCount > 0"
-                  @click="handleDelete(row)"
-                >
+                <el-button link type="danger" :disabled="row.productCount > 0" @click="handleDelete(row)">
                   删除
                 </el-button>
               </span>
@@ -145,7 +143,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无分类" :image-size="72" />
+          <el-empty description="暂无分类" :image-size="72" class="app-empty" />
         </template>
       </el-table>
     </main>
@@ -154,6 +152,7 @@ onMounted(() => {
       v-model="dialogVisible"
       :title="editingId === null ? '新建分类' : '编辑分类'"
       width="420px"
+      align-center
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="72px">
         <el-form-item label="名称" prop="name">
@@ -174,27 +173,25 @@ onMounted(() => {
 
 <style scoped>
 .categories-page {
-  min-height: 100%;
-  padding: 16px;
-  box-sizing: border-box;
-}
-
-.page-body {
-  padding: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
 }
 
 .tip {
-  margin-bottom: 12px;
-  font-size: 12px;
-  color: #909399;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: var(--gap-4);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
 }
 
 .unit {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #909399;
+  margin-left: var(--gap-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 </style>

@@ -1,0 +1,160 @@
+/**
+ * 全局基础样式：reset、字体、滚动条、通用工具类与路由过渡。
+ * 各业务页的容器留白统一交给 AdminLayout 内容区，页面自身不再声明 padding。
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--el-font-family);
+  font-size: var(--fs-body);
+  color: var(--text-1);
+  background-color: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--brand-500);
+  text-decoration: none;
+}
+
+/* ===== 数字统一等宽对齐（金额 / 取餐码 / 杯数） ===== */
+.num,
+.amount,
+.metric-value,
+.pickup-code {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ===== 细滚动条 ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d7dce6;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #c2c9d6;
+  background-clip: padding-box;
+}
+
+/* ===== 通用工具类 ===== */
+.text-muted {
+  color: var(--text-2);
+}
+
+.text-faint {
+  color: var(--text-3);
+}
+
+.hint-text {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.section-title {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+/* 通用内容卡（用于包裹表格、筛选条等） */
+.app-panel {
+  padding: var(--gap-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+/* 空态容器微调：让 el-empty 在卡片里更居中不空旷 */
+.app-empty {
+  padding: var(--gap-5) 0;
+}
+
+/* ===== 路由切换过渡（120ms 淡入 + 微位移） ===== */
+.route-fade-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+
+.route-fade-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out);
+  position: absolute;
+  inset: 0;
+}
+
+.route-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.route-fade-leave-to {
+  opacity: 0;
+}
+
+/* ===== 列表进出（卡片增删时的轻微位移） ===== */
+.list-item-enter-active,
+.list-item-leave-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+
+.list-item-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.99);
+}
+
+.list-item-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.list-item-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+.list-item-move {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* ===== 无障碍：尊重系统「减少动效」设置 ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

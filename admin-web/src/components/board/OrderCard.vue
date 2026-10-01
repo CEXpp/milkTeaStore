@@ -5,6 +5,7 @@ import type { BoardPendingOrder, BoardPreparingOrder } from '@/api/order'
 /**
  * 看板订单卡片（T19，LLD 7.3）：取餐码大字 + 渠道标签 + 商品摘要 + 合计 + 等待/制作分钟数。
  * pending 卡片提供「开始制作 / 作废」，preparing 卡片提供「出餐」；新单高亮由父级传入。
+ * 高亮动画走伪元素 opacity（合成层），避免 box-shadow 逐帧重绘。
  */
 const props = defineProps<{
   order: BoardPendingOrder | BoardPreparingOrder
@@ -79,27 +80,46 @@ const minutesText = computed(() => {
 
 <style scoped>
 .order-card {
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  background: #fff;
-  border: 2px solid #e4e7ed;
-  border-radius: 8px;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+  padding: 14px 16px;
+  margin-bottom: var(--gap-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
 }
 
-/* 新单高亮 30 秒：橙色描边 + 呼吸动画，一眼可见 */
+.order-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* 新单高亮 30 秒：伪元素呼吸（只动画 opacity，不触发重绘） */
 .order-card.is-new {
-  border-color: #e6a23c;
-  box-shadow: 0 0 0 1px #e6a23c;
-  animation: new-order-pulse 1s ease-in-out infinite alternate;
+  border-color: var(--c-warning);
+}
+
+.order-card.is-new::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--c-warning);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: new-order-pulse 1.1s ease-in-out infinite alternate;
+  will-change: opacity;
 }
 
 @keyframes new-order-pulse {
   from {
-    box-shadow: 0 0 0 1px #e6a23c;
+    opacity: 0.35;
   }
   to {
-    box-shadow: 0 0 14px 2px rgba(230, 162, 60, 0.75);
+    opacity: 1;
   }
 }
 
@@ -107,33 +127,39 @@ const minutesText = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--gap-2);
 }
 
 .pickup-code {
   font-size: 40px;
   font-weight: 700;
   line-height: 1.1;
-  color: #303133;
+  letter-spacing: 1px;
+  color: var(--text-1);
   font-family: 'Consolas', 'Menlo', monospace;
 }
 
 .source-tag {
-  padding: 2px 10px;
-  font-size: 12px;
-  color: #409eff;
-  background: #ecf5ff;
-  border-radius: 10px;
+  padding: 3px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--brand-600);
+  background: var(--brand-050);
+  border-radius: var(--radius-pill);
 }
 
 .is-preparing .source-tag {
-  color: #67c23a;
-  background: #f0f9eb;
+  color: #268356;
+  background: var(--c-success-soft);
 }
 
 .card-items {
-  margin: 8px 0;
-  font-size: 14px;
-  color: #606266;
+  margin: 10px 0 12px;
+  padding: 8px 10px;
+  font-size: var(--fs-body);
+  color: var(--text-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
 }
 
 .item-line + .item-line {
@@ -144,27 +170,32 @@ const minutesText = computed(() => {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .amount {
-  font-size: 18px;
-  font-weight: 600;
-  color: #f56c6c;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--c-danger);
 }
 
 .minutes {
-  font-size: 13px;
-  color: #909399;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
 }
 
 .card-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .card-actions .el-button {
   flex: 1;
   margin-left: 0;
+}
+
+.card-actions :deep(.el-button) {
+  border-radius: var(--radius-md);
+  font-weight: 500;
 }
 </style>

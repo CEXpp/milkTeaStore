@@ -3,9 +3,10 @@ import type { MenuCategory, MenuProduct } from '@/api/menu'
 
 /**
  * 柜台点单左栏（T20，LLD 7.3 ProductPicker）：分类分组 + 商品网格。
- * 商品卡片使用原生 button，保证收银员可全程 Tab / 回车键盘操作。
+ * 商品卡片使用原生 button，保证收银员可全程 Tab / 回车键盘操作（focus-visible 描边保留）。
+ * 图片走原生 lazy + async 解码，避免点单页首屏被图片加载阻塞。
  */
-defineProps<{
+const props = defineProps<{
   categories: MenuCategory[]
   loading?: boolean
 }>()
@@ -13,13 +14,22 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'select', product: MenuProduct): void
 }>()
+
+/** 无图时的占位字符（取商品名首字） */
+function initial(name: string): string {
+  return name.slice(0, 1)
+}
 </script>
 
 <template>
-  <div v-loading="loading" class="product-panel">
-    <template v-for="category in categories" :key="category.id">
-      <div v-if="category.products.length" class="category-block">
-        <h3 class="category-title">{{ category.name }}</h3>
+  <div v-loading="props.loading" class="product-panel">
+    <template v-for="(category, index) in props.categories" :key="category.id">
+      <div v-if="category.products.length" class="category-block" :style="{ '--delay': `${index * 20}ms` }">
+        <h3 class="category-title">
+          <span class="title-bar" />
+          {{ category.name }}
+          <span class="count">{{ category.products.length }}</span>
+        </h3>
         <div class="product-grid">
           <button
             v-for="product in category.products"
@@ -29,8 +39,14 @@ const emit = defineEmits<{
             @click="emit('select', product)"
           >
             <span class="product-thumb">
-              <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" />
-              <span v-else class="thumb-placeholder">{{ product.name.slice(0, 1) }}</span>
+              <img
+                v-if="product.imageUrl"
+                :src="product.imageUrl"
+                :alt="product.name"
+                loading="lazy"
+                decoding="async"
+              />
+              <span v-else class="thumb-placeholder">{{ initial(product.name) }}</span>
             </span>
             <span class="product-name">{{ product.name }}</span>
             <span class="product-price">￥{{ product.basePrice }} 起</span>
@@ -38,7 +54,7 @@ const emit = defineEmits<{
         </div>
       </div>
     </template>
-    <el-empty v-if="!loading && !categories.length" description="暂无上架商品" />
+    <el-empty v-if="!props.loading && !props.categories.length" description="暂无上架商品" class="app-empty" />
   </div>
 </template>
 
@@ -48,20 +64,39 @@ const emit = defineEmits<{
 }
 
 .category-block + .category-block {
-  margin-top: 18px;
+  margin-top: var(--gap-5);
 }
 
 .category-title {
-  margin: 0 0 10px;
-  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin: 0 0 var(--gap-3);
+  font-size: var(--fs-h2);
   font-weight: 600;
-  color: #303133;
+  color: var(--text-1);
+}
+
+.title-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--brand-400) 0%, var(--brand-600) 100%);
+}
+
+.count {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-pill);
 }
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: var(--gap-3);
 }
 
 .product-card {
@@ -69,26 +104,44 @@ const emit = defineEmits<{
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 10px 8px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  padding: 10px 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s;
   font: inherit;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+  animation: card-in var(--dur-base) var(--ease-out) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .product-card:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 10px rgba(64, 158, 255, 0.18);
+  border-color: var(--brand-400);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-3px);
 }
 
 .product-card:active {
-  transform: scale(0.98);
+  transform: translateY(-1px) scale(0.985);
 }
 
 .product-card:focus-visible {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--brand-500);
   outline-offset: 1px;
 }
 
@@ -97,10 +150,10 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 72px;
+  height: 76px;
   overflow: hidden;
-  background: #f5f7fa;
-  border-radius: 6px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
 }
 
 .product-thumb img {
@@ -112,17 +165,20 @@ const emit = defineEmits<{
 .thumb-placeholder {
   font-size: 26px;
   font-weight: 700;
-  color: #c0c4cc;
+  color: var(--text-3);
 }
 
 .product-name {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 500;
-  color: #303133;
+  color: var(--text-1);
+  text-align: center;
+  line-height: 1.35;
 }
 
 .product-price {
-  font-size: 13px;
-  color: #f56c6c;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--c-danger);
 }
 </style>

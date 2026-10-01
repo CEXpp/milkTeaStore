@@ -1,0 +1,225 @@
+/**
+ * Element Plus 主题覆写（CSS 变量方案，官方 2.x 支持，无需 sass 重编译）。
+ * 必须在 element-plus/dist/index.css 之后引入，才能覆盖其 :root 默认值。
+ * 目标：把默认「塑料蓝」换成靛蓝主色，统一圆角、边框与表格观感。
+ */
+
+:root {
+  /* 主色阶 */
+  --el-color-primary: var(--brand-500);
+  --el-color-primary-light-3: #818ce2;
+  --el-color-primary-light-5: #a5adeb;
+  --el-color-primary-light-7: #c9cef3;
+  --el-color-primary-light-8: #dbdef7;
+  --el-color-primary-light-9: #edeffb;
+  --el-color-primary-dark-2: #3c49ab;
+
+  /* 功能色阶 */
+  --el-color-success: var(--c-success);
+  --el-color-success-light-3: #6dbf97;
+  --el-color-success-light-5: #97d1b5;
+  --el-color-success-light-7: #c3e4d6;
+  --el-color-success-light-8: #d7ede2;
+  --el-color-success-light-9: #ecf8f2;
+  --el-color-success-dark-2: #268356;
+
+  --el-color-warning: var(--c-warning);
+  --el-color-warning-light-3: #e9bf77;
+  --el-color-warning-light-5: #f0d19e;
+  --el-color-warning-light-7: #f6e5c6;
+  --el-color-warning-light-8: #f9edda;
+  --el-color-warning-light-9: #fbf4eb;
+  --el-color-warning-dark-2: #b38230;
+
+  --el-color-danger: var(--c-danger);
+  --el-color-danger-light-3: #e98f86;
+  --el-color-danger-light-5: #f0b0aa;
+  --el-color-danger-light-7: #f7d4d0;
+  --el-color-danger-light-8: #fae2df;
+  --el-color-danger-light-9: #fcf0ef;
+  --el-color-danger-dark-2: #b34640;
+
+  --el-color-error: var(--c-danger);
+  --el-color-error-light-3: #e98f86;
+  --el-color-error-light-5: #f0b0aa;
+  --el-color-error-light-7: #f7d4d0;
+  --el-color-error-light-8: #fae2df;
+  --el-color-error-light-9: #fcf0ef;
+  --el-color-error-dark-2: #b34640;
+
+  --el-color-info: var(--c-info);
+  --el-color-info-light-3: #939ba7;
+  --el-color-info-light-5: #b5bac3;
+  --el-color-info-light-7: #d6d9de;
+  --el-color-info-light-8: #e3e5e9;
+  --el-color-info-light-9: #f1f2f6;
+  --el-color-info-dark-2: #565e6b;
+
+  /* 文本 */
+  --el-text-color-primary: var(--text-1);
+  --el-text-color-regular: #374151;
+  --el-text-color-secondary: var(--text-2);
+  --el-text-color-placeholder: var(--text-3);
+  --el-text-color-disabled: #c0c4cc;
+
+  /* 边框 */
+  --el-border-color: var(--border-strong);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-border-color-extra-light: var(--border);
+  --el-border-color-hover: #c3ccdb;
+  --el-border-color-darker: var(--border-strong);
+
+  /* 填充 / 背景 */
+  --el-fill-color: #f1f2f6;
+  --el-fill-color-light: var(--bg-subtle);
+  --el-fill-color-lighter: #fbfcfd;
+  --el-fill-color-blank: #ffffff;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: var(--bg-app);
+  --el-bg-color-overlay: #ffffff;
+
+  /* 字体 */
+  --el-font-family: 'PingFang SC', 'Helvetica Neue', Helvetica, 'Microsoft YaHei', Arial, sans-serif;
+  --el-font-size-base: 14px;
+
+  /* 圆角 */
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: var(--radius-pill);
+
+  /* 表格：弱化斑马纹、表头走浅灰底 */
+  --el-table-border-color: var(--border);
+  --el-table-header-bg-color: var(--bg-subtle);
+  --el-table-header-text-color: var(--text-2);
+  --el-table-row-hover-bg-color: #f6f8fc;
+  --el-table-text-color: var(--text-1);
+
+  /* 卡片：交由业务样式统一自定义，这里只取消默认边框的割裂感 */
+  --el-card-border-color: var(--border);
+  --el-card-border-radius: var(--radius-lg);
+
+  /* 遮罩 */
+  --el-overlay-color-lighter: rgba(16, 24, 40, 0.45);
+  --el-box-shadow-light: var(--shadow-card);
+  --el-box-shadow: var(--shadow-hover);
+  --el-transition-duration: var(--dur-base);
+  --el-transition-duration-fast: var(--dur-fast);
+}
+
+/* 卡片默认去掉边框线，改由阴影塑形（与蓝灰体系的卡片规范一致） */
+.el-card {
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.el-card.is-always-shadow,
+.el-card.is-hover-shadow:hover {
+  box-shadow: var(--shadow-card);
+}
+
+.el-card__header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.el-card__body {
+  padding: 18px;
+}
+
+/* 表格：表头字重降低、行高放松，减少密集感 */
+.el-table {
+  --el-table-row-hover-bg-color: #f6f8fc;
+  font-size: var(--fs-body);
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.el-table .el-table__cell {
+  padding: 10px 0;
+}
+
+/* 主按钮：靛蓝渐变抬升质感 */
+.el-button--primary {
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(75, 91, 214, 0.24);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  box-shadow: 0 4px 14px rgba(75, 91, 214, 0.32);
+}
+
+.el-button {
+  font-weight: 500;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.el-button:active {
+  transform: translateY(1px);
+}
+
+/* 输入框聚焦：靛蓝描边 + 极淡光圈 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: box-shadow var(--dur-base) var(--ease-out);
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--brand-500) inset, 0 0 0 3px rgba(75, 91, 214, 0.12);
+}
+
+/* 标签：圆角胶囊化 */
+.el-tag {
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+/* 对话框 / 抽屉：加大圆角与层次 */
+.el-dialog {
+  border-radius: var(--radius-lg);
+}
+
+.el-drawer {
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+/* 消息弹窗：与卡片同一圆角语言 */
+.el-message {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hover);
+}
+
+.el-message-box {
+  border-radius: var(--radius-lg);
+  padding-bottom: 12px;
+}
+
+/* 分页器：弱化背景块 */
+.el-pagination.is-background .el-pager li:not(.is-disabled).is-active {
+  background-color: var(--brand-500);
+}
+
+.el-pagination.is-background .el-pager li:not(.is-disabled):hover {
+  color: var(--brand-500);
+}
+
+/* 加载遮罩：与页面底色一致，避免切换时闪白 */
+.el-loading-mask {
+  background-color: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(1.5px);
+}

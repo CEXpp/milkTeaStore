@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createCounterOrder, type CounterOrderResult } from '@/api/order'
 import { getMenu, type MenuCategory, type MenuProduct } from '@/api/menu'
@@ -16,12 +15,12 @@ import DraftPanel from '@/components/counter/DraftPanel.vue'
  * - 右栏草稿：增删行、数量步进、整单备注、合计；
  * - 「确认收款」→ POST /api/admin/counter-orders（创建即 PAID + 出取餐码）→ 大号取餐码窗口 5 秒；
  * - 收银键盘流：商品 → 回车加入草稿 → Ctrl+Enter 收款（Esc 关闭弹窗）。
+ *
+ * 布局：整屏两栏（meta.fullHeight），左右栏各自滚动，页面本身不滚动。
  */
 
 /** 取餐码弹窗展示时长（秒） */
 const PICKUP_DISPLAY_SECONDS = 5
-
-const router = useRouter()
 
 const categories = ref<MenuCategory[]>([])
 const paused = ref(false)
@@ -169,13 +168,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="counter-page">
-    <header class="counter-topbar">
-      <div class="topbar-left">
-        <el-button link type="primary" @click="router.push('/board')">← 返回看板</el-button>
-        <span class="counter-title">柜台点单</span>
-        <el-tag v-if="paused" type="warning" effect="dark">暂停接单中（柜台点单不受影响）</el-tag>
+    <header class="counter-hintbar">
+      <div class="hint-left">
+        <el-tag v-if="paused" type="warning" effect="dark" size="small">暂停接单中（柜台点单不受影响）</el-tag>
+        <span class="hint-text">点商品 → 回车加入草稿 → Ctrl+Enter 收款</span>
       </div>
-      <div class="topbar-hint">键盘流：点商品 → 回车加入草稿 → Ctrl+Enter 收款</div>
+      <span class="hint-right">共 {{ categories.length }} 个分类</span>
     </header>
 
     <main class="counter-body">
@@ -197,12 +195,15 @@ onBeforeUnmount(() => {
 
     <SpecDialog v-model:visible="specVisible" :product="activeProduct" @confirm="addLine" />
 
-    <!-- 大号取餐码窗口（5 秒自动关闭） -->
+    <!-- 大号取餐码窗口（5 秒自动关闭，点击立即关闭） -->
     <div v-if="pickupInfo" class="pickup-overlay" @click="closePickup">
       <div class="pickup-box">
         <div class="pickup-label">取餐码</div>
         <div class="pickup-code">{{ pickupInfo.pickupCode }}</div>
         <div class="pickup-amount">￥{{ pickupInfo.totalAmount }}</div>
+        <div class="pickup-progress">
+          <span class="progress-bar" :style="{ width: `${(countdown / PICKUP_DISPLAY_SECONDS) * 100}%` }" />
+        </div>
         <div class="pickup-tip">{{ countdown }} 秒后自动关闭（点击立即关闭）</div>
       </div>
     </div>
@@ -213,60 +214,59 @@ onBeforeUnmount(() => {
 .counter-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  padding: var(--gap-4);
+  gap: var(--gap-3);
   box-sizing: border-box;
-  padding: 12px 16px;
 }
 
-.counter-topbar {
+.counter-hintbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--gap-3);
   padding: 10px 16px;
-  margin-bottom: 12px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
-.topbar-left {
+.hint-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--gap-3);
+  min-width: 0;
 }
 
-.counter-title {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.topbar-hint {
-  font-size: 12px;
-  color: #909399;
+.hint-right {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  white-space: nowrap;
 }
 
 .counter-body {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: var(--gap-4);
   flex: 1;
   min-height: 0;
 }
 
 .left-pane,
 .right-pane {
-  padding: 14px;
+  padding: var(--gap-4);
   overflow-y: auto;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 @media (max-width: 1000px) {
   .counter-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -277,21 +277,44 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(3px);
+  animation: overlay-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .pickup-box {
-  min-width: 360px;
-  padding: 40px 56px;
+  min-width: 380px;
+  padding: 36px 56px 28px;
   text-align: center;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-float);
+  animation: pickup-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes pickup-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .pickup-label {
-  font-size: 16px;
-  color: #909399;
+  font-size: var(--fs-body);
+  color: var(--text-3);
   letter-spacing: 4px;
 }
 
@@ -300,19 +323,36 @@ onBeforeUnmount(() => {
   font-size: 120px;
   font-weight: 700;
   line-height: 1.1;
-  color: #409eff;
+  color: var(--brand-500);
   font-family: 'Consolas', 'Menlo', monospace;
+  text-shadow: 0 6px 24px rgba(75, 91, 214, 0.18);
 }
 
 .pickup-amount {
   font-size: 24px;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
+}
+
+.pickup-progress {
+  height: 4px;
+  margin: 18px auto 0;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand-400) 0%, var(--brand-600) 100%);
+  transition: width 1s linear;
 }
 
 .pickup-tip {
-  margin-top: 16px;
-  font-size: 12px;
-  color: #c0c4cc;
+  margin-top: 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 </style>
