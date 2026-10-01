@@ -114,6 +114,11 @@ queue:
   volatility: ${QUEUE_VOLATILITY:0.3}
   # 误差常量安全垫 buffer（分钟）
   buffer-minutes: ${QUEUE_BUFFER_MINUTES:1}
+  # 动态接单节奏（T48，W18）：队列杯数阈值。达到 busy 在看板提示偏忙；
+  # 达到 overload 仅「建议」暂停接单——系统不会自动暂停，暂停始终由店长在顶栏开关手动作出。
+  pace:
+    busy-cups: ${QUEUE_PACE_BUSY_CUPS:10}
+    overload-cups: ${QUEUE_PACE_OVERLOAD_CUPS:20}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）

@@ -2,6 +2,8 @@ package com.milktea.order.queue.controller;
 
 import com.milktea.order.common.result.R;
 import com.milktea.order.queue.service.QueueEstimateService;
+import com.milktea.order.queue.service.QueuePaceService;
+import com.milktea.order.queue.vo.QueuePaceVo;
 import com.milktea.order.queue.vo.QueueSnapshotVo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,10 +27,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminQueueController {
 
     private final QueueEstimateService queueEstimateService;
+    private final QueuePaceService queuePaceService;
 
     /** 全店队列快照（等价于「此刻新来一单」的等待预估）。 */
     @GetMapping("/estimate")
     public R<QueueSnapshotVo> estimate() {
         return R.ok(queueEstimateService.snapshot());
+    }
+
+    /**
+     * 动态接单节奏（T48）：队列压力档位（NORMAL / BUSY / OVERLOAD）+ 给店长的建议。
+     *
+     * <p><b>只读</b>：本接口不写任何表、不改 4.6 的暂停开关——超阈值时只返回
+     * {@code suggestPause=true} 供看板提示，是否暂停由店长自行决定（任务卡验收项
+     * 「任何情况下不自动暂停接单」）。</p>
+     */
+    @GetMapping("/pace")
+    public R<QueuePaceVo> pace() {
+        return R.ok(queuePaceService.pace());
     }
 }
