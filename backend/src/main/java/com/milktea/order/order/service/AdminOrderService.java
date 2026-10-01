@@ -221,6 +221,9 @@ public class AdminOrderService {
         card.setTotalAmount(MoneyUtils.format(order.getTotalAmount()));
         card.setPaidAt(format(order.getPaidAt()));
         card.setMinutesWaiting(Math.max(minutes, 0));
+        // 到店握手信号（T49）：只打标记——排序仍是 LLD 3.5 的「先付先做」，一成不变
+        card.setArrived(order.getArrivedAt() != null);
+        card.setArrivedAt(format(order.getArrivedAt()));
         return card;
     }
 

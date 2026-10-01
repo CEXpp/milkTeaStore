@@ -1,29 +1,98 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { createOrder } from '@/api/order'
+import { getQueueEstimate, scheduleRemind, type QueueEstimate } from '@/api/queue'
+import { getSubscribeTemplates, reportSubscribe, type SubscribeTemplate } from '@/api/subscribe'
 import { useCartStore } from '@/stores/cart'
+import { useA11yStore } from '@/stores/a11y'
 import { ApiError, CODE_SHOP_PAUSED, CODE_PRODUCT_UNAVAILABLE } from '@/utils/request'
 import { formatCents } from '@/utils/money'
 import { toCompactDateTime } from '@/utils/datetime'
+import { requestSubscribeQuota } from '@/utils/wx-subscribe'
 
 /**
- * 购物车页（T26，LLD 8.2）：
+ * 购物车页（T26，LLD 8.2 / T45 11.4 / T47 下单前预期管理）：
  * - 列表项：数量步进 / 删除 / 口味备注；合计为本地展示价（后端计价才是事实来源）；
  * - 「去结算」→ POST /api/customer/orders 创建订单（金额以后端返回为准）→ 跳支付确认页；
- * - 失败降级（SRS）：1006 暂停接单 / 1002 商品变动 / 1003 规格非法 → 弹窗说明并引导回菜单刷新。
+ * - 失败降级（SRS）：1006 暂停接单 / 1002 商品变动 / 1003 规格非法 → 弹窗说明并引导回菜单刷新；
+ * - 无障碍（T45）：仅放大合计金额并提升对比度，计价与下单逻辑完全不变；
+ * - 下单前预期管理（T47）：结算前展示**真实队列预估**（T46 内核）并提供「稍后提醒我再点」。
+ *   关键约束：该功能发生在创建订单之前——只登记一条提醒任务，**不产生任何订单**，
+ *   因此 3.5 下单流程与 6.1 超时关单规则不受影响；购物车留在本地，提醒送达后不丢失。
  */
 
 /** 规格不合法的错误码（LLD 3.2） */
 const CODE_SPEC_INVALID = 1003
 
 const cart = useCartStore()
+const a11y = useA11yStore()
 const submitting = ref(false)
 
-// 从菜单页返回购物车时，store 数据仍在；此处无需额外加载
+/** 下单前队列预估（T47）：来自后端真实队列聚合，前端不做本地估算 */
+const estimate = ref<QueueEstimate | null>(null)
+/** 可订阅模板：点击「稍后提醒」需在手势内同步发起授权，故提前取好 */
+const subscribeTemplates = ref<SubscribeTemplate[]>([])
+/** 本次会话内已登记的提醒时间（登记后展示，避免重复点击） */
+const remindAt = ref<string | null>(null)
+const remindBusy = ref(false)
+
+/** 「稍后提醒」只需要 REMIND 模板 */
+const remindTemplates = computed(() => subscribeTemplates.value.filter((item) => item.key === 'REMIND'))
+
 onShow(() => {
-  // 预留：如需在结算前校验暂停状态，可在此刷新 shop-status（当前由下单接口的 1006 兜底）
+  // 从菜单页返回购物车时 store 数据仍在；此处补一次队列预估与订阅模板（均失败静默，不打断结算）
+  void loadEstimate()
+  void loadSubscribeTemplates()
 })
+
+/** 下单前队列预估；空购物车或请求失败时不展示该卡片。 */
+async function loadEstimate(): Promise<void> {
+  if (cart.isEmpty) {
+    estimate.value = null
+    return
+  }
+  try {
+    estimate.value = await getQueueEstimate()
+  } catch {
+    estimate.value = null
+  }
+}
+
+/** 预取可订阅模板（失败静默：订阅只是增强项，不打扰结算流程）。 */
+async function loadSubscribeTemplates(): Promise<void> {
+  try {
+    subscribeTemplates.value = await getSubscribeTemplates()
+  } catch {
+    subscribeTemplates.value = []
+  }
+}
+
+/**
+ * 「稍后提醒我再点」（T47）。
+ *
+ * 顺序不可颠倒：订阅授权必须在**用户点击的同步调用栈内**发起（微信 2.8.2 起约束），
+ * 故先调 requestSubscribeQuota 拿到 Promise，再 await 网络请求。
+ * 登记成功**不产生任何订单**；即便用户拒绝授权，登记照样成功（到点因无额度被后端跳过）。
+ */
+async function remindLater(): Promise<void> {
+  if (remindBusy.value) return
+  remindBusy.value = true
+  const acceptedPromise = requestSubscribeQuota(remindTemplates.value)
+  try {
+    const accepted = await acceptedPromise
+    if (accepted.length > 0) {
+      await reportSubscribe(accepted)
+    }
+    const result = await scheduleRemind()
+    remindAt.value = result.remindAt
+    uni.showToast({ title: `已登记，${result.remindAt.slice(11, 16)} 提醒你`, icon: 'none' })
+  } catch {
+    // 错误提示已由 request 层 toast 直显
+  } finally {
+    remindBusy.value = false
+  }
+}
 
 /** uni-app input 事件的 value 位于 event.detail.value */
 type UniInputEvent = { detail: { value: string } }
@@ -120,7 +189,7 @@ async function checkout(): Promise<void> {
 </script>
 
 <template>
-  <view class="cart-page">
+  <view class="cart-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="cart.isEmpty" class="empty-box">
       <view class="empty-icon">车</view>
       <view class="empty-text">购物车是空的</view>
@@ -165,11 +234,37 @@ async function checkout(): Promise<void> {
         </view>
       </view>
 
+      <!-- 下单前预期管理（T47）：真实队列预估 + 稍后提醒。只登记提醒，不产生任何订单 -->
+      <view v-if="estimate" class="eta-card">
+        <view class="eta-head">
+          <text class="eta-label">预计等待</text>
+          <text class="eta-value">
+            {{ estimate.queueCups === 0 ? '无需排队' : `${estimate.etaMinutes} 分钟` }}
+          </text>
+        </view>
+        <view class="eta-range">
+          {{
+            estimate.queueCups === 0
+              ? '队列空闲，下单即可开始制作'
+              : `当前排队 ${estimate.queueCups} 杯，波动区间 ${estimate.etaLow}–${estimate.etaHigh} 分钟（仅供参考，不做承诺）`
+          }}
+        </view>
+        <view class="eta-remind" :class="{ 'eta-remind-busy': remindBusy }" @click="remindLater">
+          {{
+            remindBusy
+              ? '登记中…'
+              : remindAt
+                ? `已登记 ${remindAt.slice(11, 16)} 提醒你`
+                : '稍后提醒我再点'
+          }}
+        </view>
+      </view>
+
       <view class="cart-footer">
         <view class="footer-total">
-          <text class="total-label">合计</text>
-          <text class="total-amount">￥{{ cart.totalAmount }}</text>
-          <text class="total-tip">以结算页后端金额为准</text>
+          <text class="total-label a11y-md">合计</text>
+          <text class="total-amount a11y-lg">￥{{ cart.totalAmount }}</text>
+          <text class="total-tip a11y-sm a11y-dim">以结算页后端金额为准</text>
         </view>
         <view class="checkout-btn" @click="checkout">
           {{ submitting ? '提交中…' : '去结算' }}
@@ -180,6 +275,54 @@ async function checkout(): Promise<void> {
 </template>
 
 <style scoped>
+/* 下单前预期管理卡片（T47）：展示真实队列预估，并提供「稍后提醒我再点」入口 */
+.eta-card {
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  background: #fff;
+  border-radius: 20rpx;
+}
+
+.eta-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.eta-label {
+  font-size: 28rpx;
+  color: #606266;
+}
+
+.eta-value {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #f56c6c;
+}
+
+.eta-range {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #909399;
+}
+
+.eta-remind {
+  margin-top: 20rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  font-size: 28rpx;
+  text-align: center;
+  color: #409eff;
+  background: #ecf5ff;
+  border-radius: 999rpx;
+}
+
+.eta-remind-busy {
+  color: #909399;
+  background: #f4f4f5;
+}
+
 .cart-page {
   min-height: 100vh;
   padding-bottom: 200rpx;

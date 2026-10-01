@@ -3,12 +3,14 @@ import { computed, ref } from 'vue'
 import { onReachBottom, onShow } from '@dcloudio/uni-app'
 import { getActiveOrders, getOrderHistory, getOrderStatus, type OrderListItem } from '@/api/order'
 import { statusLabel, STATUS_TYPE } from '@/utils/order-status'
+import { useA11yStore } from '@/stores/a11y'
 
 /**
- * 订单 Tab（T27，LLD 8.2）：
+ * 订单 Tab（T27，LLD 8.2 / T45 11.4）：
  * - 上区：进行中订单卡（状态徽标 + 排队序；排队序取自轮询轻量接口的 seq）；
  * - 下区：历史订单分页，触底加载（每页 10 条，创建时间倒序）；
- * - 每次回到本页（onShow）刷新一次，实现「关小程序再进，进行中订单仍在」。
+ * - 每次回到本页（onShow）刷新一次，实现「关小程序再进，进行中订单仍在」；
+ * - 无障碍（T45）：仅放大并加深取餐码 / 状态 / 金额的字号与对比度，列表数据、排序与分页完全不变。
  */
 
 /** 历史分页每页条数 */
@@ -18,6 +20,8 @@ interface ActiveOrder extends OrderListItem {
   /** 排队序号（仅 PAID 单需要，取不到时为 null） */
   seq: number | null
 }
+
+const a11y = useA11yStore()
 
 const activeOrders = ref<ActiveOrder[]>([])
 const history = ref<OrderListItem[]>([])
@@ -135,9 +139,9 @@ function badgeClass(status: string): string {
 </script>
 
 <template>
-  <view class="order-page">
+  <view class="order-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view class="section">
-      <view class="section-title">进行中</view>
+      <view class="section-title a11y-md">进行中</view>
       <view v-if="!activeOrders.length" class="section-empty">暂无进行中订单</view>
       <view
         v-for="order in activeOrders"
@@ -147,37 +151,37 @@ function badgeClass(status: string): string {
       >
         <view class="card-head">
           <view class="card-code">
-            <text v-if="order.pickupCode" class="code-text">{{ order.pickupCode }}</text>
-            <text v-else class="code-text code-pending">--</text>
+            <text v-if="order.pickupCode" class="code-text a11y-lg">{{ order.pickupCode }}</text>
+            <text v-else class="code-text code-pending a11y-lg">--</text>
           </view>
-          <view :class="badgeClass(order.status)">{{ statusLabel(order.status, order.seq) }}</view>
+          <view class="a11y-sm" :class="badgeClass(order.status)">{{ statusLabel(order.status, order.seq) }}</view>
         </view>
         <view class="card-items">
-          <view v-for="(line, index) in order.items" :key="index" class="item-line">{{ line }}</view>
+          <view v-for="(line, index) in order.items" :key="index" class="item-line a11y-sm">{{ line }}</view>
         </view>
         <view class="card-foot">
-          <text class="foot-time">{{ order.createdAt }}</text>
-          <text class="foot-amount">￥{{ order.totalAmount }}</text>
+          <text class="foot-time a11y-sm a11y-dim">{{ order.createdAt }}</text>
+          <text class="foot-amount a11y-md">￥{{ order.totalAmount }}</text>
         </view>
       </view>
     </view>
 
     <view class="section">
-      <view class="section-title">历史订单</view>
+      <view class="section-title a11y-md">历史订单</view>
       <view v-if="!history.length" class="section-empty">暂无历史订单</view>
       <view v-for="order in history" :key="order.id" class="order-card" @click="openDetail(order)">
         <view class="card-head">
           <view class="card-code">
-            <text class="code-text">{{ order.pickupCode ?? '--' }}</text>
+            <text class="code-text a11y-lg">{{ order.pickupCode ?? '--' }}</text>
           </view>
-          <view :class="badgeClass(order.status)">{{ statusLabel(order.status) }}</view>
+          <view class="a11y-sm" :class="badgeClass(order.status)">{{ statusLabel(order.status) }}</view>
         </view>
         <view class="card-items">
-          <view v-for="(line, index) in order.items" :key="index" class="item-line">{{ line }}</view>
+          <view v-for="(line, index) in order.items" :key="index" class="item-line a11y-sm">{{ line }}</view>
         </view>
         <view class="card-foot">
-          <text class="foot-time">{{ order.createdAt }}</text>
-          <text class="foot-amount">￥{{ order.totalAmount }}</text>
+          <text class="foot-time a11y-sm a11y-dim">{{ order.createdAt }}</text>
+          <text class="foot-amount a11y-md">￥{{ order.totalAmount }}</text>
         </view>
       </view>
 

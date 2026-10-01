@@ -79,6 +79,15 @@ public class Order {
     /** 作废原因（商家填写）。 */
     private String voidReason;
 
+    /**
+     * 顾客申报「我已到店」的时间（T49 到店握手，V6 加列）。
+     *
+     * <p>与 {@code orders.eta_minutes}（W02「我将到」）构成双向到店信号体系：
+     * 前者表示「已在店」，后者表示「预计何时到」。两者都只是<b>信号</b>——
+     * 不参与状态机、不参与超时关单、不参与统计，看板仅据此给出提示（不强制改排序）。</p>
+     */
+    private LocalDateTime arrivedAt;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

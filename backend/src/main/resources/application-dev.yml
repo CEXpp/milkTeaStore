@@ -48,6 +48,35 @@ management:
 wx:
   appid: "wxcd3beb616feadd06"
   secret: "${WX_SECRET:}"   # 本地联调用 dev-login 通道即可；真实 wx.login 需在此填入 AppSecret（或注入环境变量 WX_SECRET）
+  # 订阅消息推送（T44）：默认关闭。未配置模板 ID 时前端不弹授权、后端不下发（SRS 9.3 降级），
+  # 关闭状态下全链路静默短路，不影响下单/支付/取餐任何主流程。
+  # 开通步骤：公众平台「功能-订阅消息」选用模板 → 填模板 ID 与各变量名 → enabled 置 true，
+  # 并在 backend/.env 注入 WX_SECRET（下发需 AppSecret）。
+  # 注意：微信侧需把服务端出口 IP 加入白名单，否则换取 access_token 会返回 errcode=40164。
+  # 变量名（thing1 / character_string2 / time3）必须与该模板实际关键词一致，留空表示不下发该字段。
+  subscribe:
+    enabled: ${WX_SUBSCRIBE_ENABLED:false}
+    # 点击消息跳转页（限本小程序内页面，服务端会自动追加 ?id=订单号）
+    page: pages/order-detail/index
+    # 跳转的小程序版本：developer 开发版 / trial 体验版 / formal 正式版
+    miniprogram-state: ${WX_SUBSCRIBE_STATE:developer}
+    # 制作开始（PREPARING）
+    preparing:
+      template-id: "${WX_TMPL_PREPARING:}"
+      status-key: thing1
+      pickup-code-key: character_string2
+      time-key: time3
+    # 取餐提醒（COMPLETED，由 PICKUP_READY 事件触发）
+    pickup:
+      template-id: "${WX_TMPL_PICKUP:}"
+      status-key: thing1
+      pickup-code-key: character_string2
+      time-key: time3
+    # 稍后提醒我再点（T47，结算页下单前预期管理）：无订单上下文，故不需要取餐码变量
+    remind:
+      template-id: "${WX_TMPL_REMIND:}"
+      status-key: thing1
+      time-key: time3
 # JWT（T06）：HS256 密钥，长度须 ≥ 32 字节；真实密钥放 backend/.env（JWT_SECRET），默认值仅为本地占位
 jwt:
   secret: "${JWT_SECRET:dev-only-insecure-jwt-secret-please-change-me-0123456789abcdef}"
@@ -71,6 +100,8 @@ app:
 # 订单（T10）：支付期限（分钟），下单响应 expireAt = createdAt + 该值（LLD 3.3 / 4.2）
 order:
   payment-timeout-minutes: 15
+  # 稍后提醒（T47）：结算页「稍后提醒我再点」的默认延迟（分钟）；请求可指定，服务端上限 60
+  remind-delay-minutes: ${ORDER_REMIND_DELAY_MINUTES:15}
 # 队列预估内核（T46，LLD 11.6）：下列为默认值，可被 shop_config（KV 表）按运行期覆盖——
 # 覆盖键为 queue.prep-minutes / queue.staff / queue.volatility（见 QueueEstimateService）；
 # buffer-minutes 按 LLD 定位为「常量安全垫」，不开放运行期覆盖。
@@ -83,6 +114,11 @@ queue:
   volatility: ${QUEUE_VOLATILITY:0.3}
   # 误差常量安全垫 buffer（分钟）
   buffer-minutes: ${QUEUE_BUFFER_MINUTES:1}
+  # 动态接单节奏（T48，W18）：队列杯数阈值。达到 busy 在看板提示偏忙；
+  # 达到 overload 仅「建议」暂停接单——系统不会自动暂停，暂停始终由店长在顶栏开关手动作出。
+  pace:
+    busy-cups: ${QUEUE_PACE_BUSY_CUPS:10}
+    overload-cups: ${QUEUE_PACE_OVERLOAD_CUPS:20}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）

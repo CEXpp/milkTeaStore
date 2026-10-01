@@ -7,8 +7,10 @@ import com.milktea.order.common.result.PageResult;
 import com.milktea.order.common.result.R;
 import com.milktea.order.order.dto.OrderCreateRequest;
 import com.milktea.order.order.event.OrderEventPublisher;
+import com.milktea.order.order.service.ArrivalService;
 import com.milktea.order.order.service.OrderQueryService;
 import com.milktea.order.order.service.OrderService;
+import com.milktea.order.order.vo.ArrivalVo;
 import com.milktea.order.order.vo.OrderCreateVo;
 import com.milktea.order.order.vo.OrderDetailVo;
 import com.milktea.order.order.vo.OrderListItemVo;
@@ -37,7 +39,9 @@ import java.util.List;
  *   <li>{@code GET /api/customer/orders}（T13）：历史分页 {list,total,page,size}；</li>
  *   <li>{@code GET /api/customer/orders/{id}}（T13）：详情含订单项快照明细；</li>
  *   <li>{@code GET /api/customer/orders/{id}/status}（T13）：轮询轻量状态 {status,pickupCode,seq}；</li>
- *   <li>{@code GET /api/customer/orders/events?orderId=}（T43）：SSE 实时状态通道（轮询的增强通道，二者互为降级）。</li>
+ *   <li>{@code GET /api/customer/orders/events?orderId=}（T43）：SSE 实时状态通道（轮询的增强通道，二者互为降级）；</li>
+ *   <li>{@code POST /api/customer/orders/{id}/arrive}（T49）：申报「我已到店」，仅供看板提示，
+ *       不改状态机、不改队列排序、不影响统计。</li>
  * </ul>
  */
 @RestController
@@ -48,6 +52,7 @@ public class CustomerOrderController {
     private final OrderService orderService;
     private final OrderQueryService orderQueryService;
     private final OrderEventPublisher orderEventPublisher;
+    private final ArrivalService arrivalService;
 
     /**
      * 创建订单（LLD 3.2）：暂停接单 1006、计价 1001~1003 由服务层抛出，经全局异常处理器返回。
@@ -115,6 +120,19 @@ public class CustomerOrderController {
         Long customerId = currentCustomerId();
         OrderStatusVo snapshot = orderQueryService.status(orderId, customerId);
         return orderEventPublisher.subscribeCustomer(customerId, orderId, snapshot.status(), snapshot.pickupCode());
+    }
+
+    /**
+     * 申报「我已到店」（T49 到店握手，W19）。
+     *
+     * <p>只写 {@code orders.arrived_at} 一个信号：看板据此在卡片上打「已到店」标记，
+     * 但<b>不改变队列排序</b>（验收项「不强制改排序」）——店长可据此优先处理，也可以无视。</p>
+     *
+     * <p>幂等：重复申报返回首次申报时间；仅 PAID / PREPARING 可申报（1004），他人订单 1005。</p>
+     */
+    @PostMapping("/{id}/arrive")
+    public R<ArrivalVo> arrive(@PathVariable("id") Long id) {
+        return R.ok(arrivalService.arrive(id, currentCustomerId()));
     }
 
     /** 当前登录顾客 id：由 JWT 过滤器在请求作用域内绑定（防御性判空兜底 401）。 */

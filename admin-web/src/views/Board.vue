@@ -2,6 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { completeOrder, getOrderBoard, startOrder, voidOrder, type OrderBoardResult } from '@/api/order'
+import { getQueuePace, type QueuePace } from '@/api/queue'
 import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 import { useShopStatus } from '@/composables/useShopStatus'
 import { playDing, unlockDing } from '@/utils/ding'
@@ -33,9 +34,11 @@ const POLL_INTERVAL_MS = 3000
 /** 新单高亮时长（任务卡：新卡片高亮 30 秒） */
 const HIGHLIGHT_DURATION_MS = 30_000
 
-const { paused, notice, ensureLoaded } = useShopStatus()
+const { paused, notice, ensureLoaded, setPaused } = useShopStatus()
 
 const board = ref<OrderBoardResult | null>(null)
+/** 接单节奏建议（T48）：只读提示——超阈值仅「建议」暂停，系统绝不自动执行 */
+const pace = ref<QueuePace | null>(null)
 const highlightedIds = ref<number[]>([])
 const busyIds = ref<number[]>([])
 
@@ -167,9 +170,41 @@ async function refreshBoard(): Promise<void> {
     if (pending.changed || preparing.changed || todayChanged) {
       board.value = { pending: pending.list, preparing: preparing.list, today: data.today }
     }
+    // 顺带刷新接单节奏（T48）：失败静默，不污染看板主流程
+    void loadPace()
   } catch {
     // 错误提示已由 request 层直显；下一个轮询周期自动重试
   }
+}
+
+/** 接单节奏建议（T48）：只读展示，刷新失败不打扰店长。 */
+async function loadPace(): Promise<void> {
+  try {
+    pace.value = await getQueuePace()
+  } catch {
+    pace.value = null
+  }
+}
+
+/**
+ * 「去暂停接单」（T48）：把建议引导到**人工动作**上，并做二次确认。
+ *
+ * 任务卡验收项「任何情况下不自动暂停接单」在此落地：系统只给建议 + 引导，
+ * 真正的暂停必须由店长在确认框里点「暂停接单」才会发生（复用 4.6 的同一开关，
+ * 因此不产生任何新的「系统拒单」记录，也不影响 6.5 统计口径）。
+ */
+function handleSuggestPause(): void {
+  ElMessageBox.confirm(
+    `当前队列 ${pace.value?.totalCups ?? 0} 杯，此刻新单预计等待 ${pace.value?.etaMinutes ?? 0} 分钟。是否暂停接单？`,
+    '接单节奏建议',
+    { confirmButtonText: '暂停接单', cancelButtonText: '先不暂停', type: 'warning' }
+  )
+    .then(() => {
+      void setPaused(true)
+    })
+    .catch(() => {
+      // 店长选择不暂停：尊重决定，本轮不再打扰
+    })
 }
 
 /** 新单高亮 30 秒（到期由单一定时器 + 每轮刷新双重清理）。 */
@@ -336,6 +371,27 @@ onBeforeUnmount(() => {
   <div class="board-page">
     <StatBar :today="board?.today ?? null" />
 
+    <!-- 动态接单节奏（T48）：按队列阈值提示压力；超阈值仅「建议」暂停，系统绝不自动执行 -->
+    <div
+      v-if="pace && pace.level !== 'NORMAL'"
+      class="pace-banner"
+      :class="`pace-${pace.level.toLowerCase()}`"
+    >
+      <div class="pace-main">
+        <span class="pace-tag">{{ pace.level === 'OVERLOAD' ? '拥挤' : '偏忙' }}</span>
+        <span class="pace-text">{{ pace.suggestion }}</span>
+      </div>
+      <el-button
+        v-if="pace.suggestPause && !paused"
+        type="danger"
+        size="small"
+        plain
+        @click="handleSuggestPause"
+      >
+        去暂停接单
+      </el-button>
+    </div>
+
     <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转 -->
     <div v-if="paused" class="pause-banner">
       <span class="banner-dot" />
@@ -396,6 +452,49 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--gap-4);
+}
+
+/* 动态接单节奏横幅（T48）：偏忙=黄、拥挤=红；只提示、不执行 */
+.pace-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding: 12px 16px;
+  font-size: var(--fs-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.pace-busy {
+  color: #b88230;
+  background: var(--c-warning-soft);
+  border-color: rgba(224, 163, 60, 0.28);
+}
+
+.pace-overload {
+  color: #b93027;
+  background: var(--c-danger-soft);
+  border-color: rgba(224, 87, 79, 0.3);
+}
+
+.pace-main {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.pace-tag {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: var(--radius-pill);
+}
+
+.pace-text {
+  line-height: 1.6;
 }
 
 .pause-banner {

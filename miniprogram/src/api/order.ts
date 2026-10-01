@@ -119,6 +119,28 @@ export function payOrder(orderId: number): Promise<OrderPayResult> {
   return request<OrderPayResult>({ url: `/api/customer/orders/${orderId}/pay`, method: 'POST', auth: true })
 }
 
+/** POST /api/customer/orders/{id}/arrive 响应 data（T49 到店握手） */
+export interface OrderArrivalResult {
+  orderId: number
+  /** 申报到店时间（yyyy-MM-dd HH:mm:ss）；重复申报返回首次申报时间 */
+  arrivedAt: string | null
+  arrived: boolean
+}
+
+/**
+ * 申报「我已到店」（T49 到店握手）。
+ *
+ * 只是一条给商家看板的**提示信号**：不改订单状态、不改队列排序、不影响统计口径；
+ * 重复调用幂等（返回首次申报时间）；仅 PAID / PREPARING 可申报（否则 1004）。
+ */
+export function arriveOrder(orderId: number): Promise<OrderArrivalResult> {
+  return request<OrderArrivalResult>({
+    url: `/api/customer/orders/${orderId}/arrive`,
+    method: 'POST',
+    auth: true
+  })
+}
+
 /** 进行中订单列表（PENDING_PAYMENT / PAID / PREPARING） */
 export function getActiveOrders(): Promise<OrderListItem[]> {
   return request<OrderListItem[]>({ url: '/api/customer/orders/active', auth: true })

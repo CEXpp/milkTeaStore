@@ -34,4 +34,15 @@ public class BoardPendingCardVo implements Serializable {
 
     /** 已等待分钟数（now - paidAt，含边界归零）。 */
     private long minutesWaiting;
+
+    /**
+     * 顾客是否已申报到店（T49 到店握手）。
+     *
+     * <p>仅作**提示**：卡片会打上「已到店」标记、排序保持不变（验收项「不强制改排序」）。
+     * 店长可视情况优先处理，也可以完全无视——系统不会因此调整任何队列顺序或统计口径。</p>
+     */
+    private boolean arrived;
+
+    /** 申报到店时间（yyyy-MM-dd HH:mm:ss）；未申报为 null。 */
+    private String arrivedAt;
 }

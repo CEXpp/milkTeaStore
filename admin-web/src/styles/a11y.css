@@ -1,0 +1,68 @@
+/**
+ * 无障碍模式样式（T45，SRS 9.6 / LLD 11.4）。
+ *
+ * 全部规则挂在 html.a11y 之下，作用范围是**呈现层**：
+ * - 字号：整体上调（Element Plus 走 --el-font-size-base，自定义 UI 走 --fs-*）；
+ * - 对比度：正文与次要文字加深、描边加重、浅底标签换成更实的底色；
+ * - 触达：点击目标加大（表格行高、按钮高度）。
+ *
+ * 明确不做的事：不改动任何布局结构、不改变数据、不新增/隐藏功能入口
+ * （LLD 11.4「边界红线」：只改变『信息如何被看到』，不改变『信息是什么』）。
+ */
+
+html.a11y {
+  /* ===== 字号整体上调（自定义 UI） ===== */
+  --fs-h1: 26px;
+  --fs-h2: 19px;
+  --fs-body: 17px;
+  --fs-sm: 16px;
+  --fs-xs: 15px;
+
+  /* ===== 字号整体上调（Element Plus） ===== */
+  --el-font-size-base: 16px;
+  --el-font-size-small: 15px;
+  --el-font-size-extra-small: 14px;
+
+  /* ===== 高对比：正文更深、次要文字不再发灰 ===== */
+  --text-1: #0b1220;
+  --text-2: #374151;
+  --text-3: #4b5563;
+
+  /* ===== 高对比：描边加重，卡片边界在强光下也清晰 ===== */
+  --border: #b9c2d0;
+  --border-strong: #8e9aad;
+
+  /* ===== 高对比：功能色加深（保留色相语义，仅提高对比度） ===== */
+  --c-success: #1c7a4d;
+  --c-warning: #9a6512;
+  --c-danger: #b93027;
+  --c-info: #4b5563;
+
+  --c-success-soft: #dcf3e7;
+  --c-warning-soft: #fbeed2;
+  --c-danger-soft: #fadcd9;
+  --c-info-soft: #e6e8ee;
+  --brand-050: #e3e8fa;
+}
+
+/* 顶栏与侧栏在放大字号后需要多一点呼吸空间，避免文字被裁切 */
+html.a11y {
+  --topbar-h: 68px;
+  --sidebar-w: 248px;
+}
+
+/* Element Plus 组件的点击目标加大（触屏 / 视力不佳场景更容易命中） */
+html.a11y .el-button {
+  min-height: 38px;
+  padding: 10px 18px;
+}
+
+html.a11y .el-input__wrapper,
+html.a11y .el-textarea__inner {
+  font-size: var(--fs-body);
+}
+
+/* 表格行在放大字号后需要更高行高，否则数字与标签会挤在一起 */
+html.a11y .el-table .cell {
+  line-height: 1.6;
+}

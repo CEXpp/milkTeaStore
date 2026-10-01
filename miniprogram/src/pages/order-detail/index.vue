@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
-import { getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import { arriveOrder, getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import { getQueueEstimate, type QueueEstimate } from '@/api/queue'
 import {
   subscribeOrderEvents,
   type OrderEventSubscription,
   type OrderStatusEvent
 } from '@/utils/order-events'
 import { isActiveStatus, isTerminalStatus, statusLabel, STATUS_TYPE } from '@/utils/order-status'
+import { useA11yStore } from '@/stores/a11y'
+import { vibratePickupReady } from '@/utils/pickup-remind'
 
 /**
- * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1）：
+ * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1 / T45 11.4）：
  * - 大号取餐码 + 状态时间线（下单 / 支付 / 制作 / 出餐，未发生的事件置灰）；
  * - 实时通道（T43）：优先订阅 SSE `/api/customer/orders/events?orderId=`，收到事件立即应用载荷并
  *   补拉一次轻量状态（补齐 seq），出口与轮询一致；SSE 不可用时回落 3 秒轮询 `/{id}/status`，二者互斥；
  * - 连接建立时后端会补发一条当前状态快照，重连后自动对齐服务端真值；
  * - COMPLETED / CLOSED / VOIDED 为终态：关闭实时通道并展示终态文案（COMPLETED → 请取餐）；
- * - 页面切后台（onHide）关闭实时通道省流量，切回（onShow）立即刷新一次并重新建连。
+ * - 页面切后台（onHide）关闭实时通道省流量，切回（onShow）立即刷新一次并重新建连；
+ * - 无障碍（T45，LLD 11.4「双信道取餐提醒」）：开启后进入 COMPLETED 时追加**震动**信道，
+ *   并把取餐码与状态放大加黑；视觉/触觉/微信订阅消息三信道同源（都由 PICKUP_READY 驱动），
+ *   呈现层分叉而业务契约不变。
  */
 
 const POLL_INTERVAL_MS = 3000
+
+const a11y = useA11yStore()
 
 const orderId = ref<number | null>(null)
 const order = ref<OrderDetail | null>(null)
@@ -27,6 +35,16 @@ const status = ref<string>('')
 const pickupCode = ref<string | null>(null)
 const seq = ref<number | null>(null)
 const loading = ref(true)
+
+/** 队列预估（T49）：来自 T46 内核的真实队列聚合，前端不做本地估算 */
+const estimate = ref<QueueEstimate | null>(null)
+/** 已等待秒数（每秒刷新，用于「已等待 mm:ss」） */
+const waitedSeconds = ref(0)
+/** 到店申报时间（申报后展示，避免重复点击） */
+const arrivedAt = ref<string | null>(null)
+const arriveBusy = ref(false)
+/** 秒级计时器（仅进行中订单需要） */
+let tickTimer: number | null = null
 
 let pollTimer: number | null = null
 /** SSE 订阅句柄（T43）；为 null 表示当前走轮询回落通道 */
@@ -45,15 +63,25 @@ onShow(() => {
     return
   }
   void start()
+  startTick()
 })
 
-onHide(() => closeRealtime())
-onUnload(() => closeRealtime())
+onHide(() => {
+  closeRealtime()
+  stopTick()
+})
 
-/** 进入页面：拉详情 + 首次状态，随后按需启动实时通道 */
+onUnload(() => {
+  closeRealtime()
+  stopTick()
+})
+
+/** 进入页面：拉详情 + 首次状态 + 队列预估，随后按需启动实时通道 */
 async function start(): Promise<void> {
   await loadDetail()
   await poll()
+  await loadEstimate()
+  refreshWaited()
   if (isActiveStatus(status.value)) {
     startRealtime()
   }
@@ -103,6 +131,14 @@ async function applyStatus(
   }
   if (previous !== status.value) {
     await loadDetail(true)
+    // 状态变了，队列位置与预计等待也随之变化（T49）；失败静默，不影响主状态展示
+    void loadEstimate()
+    refreshWaited()
+  }
+  // 双信道提醒（T45）：刚刚进入「请取餐」时追加震动信道（仅无障碍模式；订阅消息由 T44 后端推送）。
+  // 判定「刚刚进入」而非「当前是 COMPLETED」，避免每次重进页面都震一次。
+  if (a11y.enabled && status.value === 'COMPLETED' && previous !== 'COMPLETED') {
+    vibratePickupReady()
   }
   if (isTerminalStatus(status.value)) {
     closeRealtime()
@@ -166,12 +202,106 @@ function stopPolling(): void {
   }
 }
 
+/** 队列预估（T49）：失败静默——预估只是预期管理，缺失也不影响订单状态展示。 */
+async function loadEstimate(): Promise<void> {
+  if (!orderId.value) {
+    return
+  }
+  try {
+    estimate.value = await getQueueEstimate(orderId.value)
+  } catch {
+    estimate.value = null
+  }
+}
+
+/** 已等待时长（从支付时刻起算）；非队列内订单归零。 */
+function refreshWaited(): void {
+  const startAt = parseDateTime(order.value?.paidAt ?? null)
+  waitedSeconds.value = startAt === null ? 0 : Math.max(0, Math.floor((Date.now() - startAt) / 1000))
+}
+
+/**
+ * 解析后端时间串（yyyy-MM-dd HH:mm:ss）。
+ * 注意：iOS 的 Date.parse 不接受「空格分隔」的格式，须替换为 ISO 的 'T'。
+ */
+function parseDateTime(text: string | null): number | null {
+  if (!text) {
+    return null
+  }
+  const parsed = Date.parse(text.replace(' ', 'T'))
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function startTick(): void {
+  if (tickTimer !== null) {
+    return
+  }
+  tickTimer = setInterval(refreshWaited, 1000) as unknown as number
+}
+
+function stopTick(): void {
+  if (tickTimer !== null) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+/**
+ * 申报「我已到店」（T49 到店握手）。
+ *
+ * 只写一个信号：看板据此给卡片打「已到店」标记，**不改变队列排序**（验收项「不强制改排序」），
+ * 店长可据此优先处理、也可完全无视。重复申报幂等，不报错。
+ */
+async function markArrived(): Promise<void> {
+  if (!orderId.value || arriveBusy.value || arrivedAt.value) {
+    return
+  }
+  arriveBusy.value = true
+  try {
+    const result = await arriveOrder(orderId.value)
+    arrivedAt.value = result.arrivedAt
+    uni.showToast({ title: '已告知商家你已到店', icon: 'none' })
+  } catch {
+    // 错误提示已由 request 层 toast 直显（如 1004 当前状态不可申报）
+  } finally {
+    arriveBusy.value = false
+  }
+}
+
 /** 状态展示文案：PAID →「排队中第 N 位」、PREPARING →「制作中」、COMPLETED →「请取餐」 */
 const statusText = computed(() => statusLabel(status.value, seq.value))
 
 const badgeType = computed(() => STATUS_TYPE[status.value] ?? 'info')
 
 const active = computed(() => isActiveStatus(status.value))
+
+/** 可申报到店的状态（与后端 ArrivalService.ARRIVABLE_STATUSES 一致） */
+const arrivable = computed(() => status.value === 'PAID' || status.value === 'PREPARING')
+
+/** 已等待 mm:ss（秒级刷新） */
+const waitedText = computed(() => {
+  const mm = Math.floor(waitedSeconds.value / 60)
+  const ss = waitedSeconds.value % 60
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+})
+
+/** 预计还需区间：诚实标注不确定性，不做精确承诺（W19）；不在队列中时不展示 */
+const estimateText = computed(() => {
+  const current = estimate.value
+  if (!current || current.position === 0) {
+    return ''
+  }
+  return `${current.etaLow}–${current.etaHigh} 分钟`
+})
+
+/** 队列位置（1 起；null 与 0 均不展示） */
+const positionText = computed(() => {
+  const current = estimate.value
+  if (!current || !current.position) {
+    return ''
+  }
+  return `第 ${current.position} 位`
+})
 
 /** 时间线：下单 → 支付 → 制作 → 出餐（未发生的事件显示为 pending） */
 const timeline = computed(() => {
@@ -212,47 +342,77 @@ function continuePay(): void {
 </script>
 
 <template>
-  <view class="detail-page">
+  <view class="detail-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="loading" class="page-tip">订单加载中…</view>
 
     <template v-else-if="order">
+      <!-- 无障碍取餐提醒横幅（T45 视觉信道）：与震动、微信订阅消息同源，均由 COMPLETED 触发 -->
+      <view v-if="a11y.enabled && status === 'COMPLETED'" class="a11y-pickup-banner">
+        <text class="a11y-pickup-title">请到柜台取餐</text>
+        <text class="a11y-pickup-code">{{ pickupCode ?? '--' }}</text>
+        <text class="a11y-pickup-tip">已同时以手机震动与微信消息提醒</text>
+      </view>
+
       <view class="code-card">
-        <view class="code-label">取餐码</view>
-        <view class="code-value">{{ pickupCode ?? '--' }}</view>
-        <view class="code-status" :class="`status-${badgeType}`">{{ statusText }}</view>
-        <view v-if="active" class="code-tip">制作进度实时同步（连接异常时自动切换为轮询）</view>
-        <view v-else-if="terminalTip" class="code-tip">{{ terminalTip }}</view>
+        <view class="code-label a11y-md a11y-dim">取餐码</view>
+        <view class="code-value a11y-code">{{ pickupCode ?? '--' }}</view>
+        <view class="code-status a11y-lg" :class="`status-${badgeType}`">{{ statusText }}</view>
+        <view v-if="active" class="code-tip a11y-sm a11y-dim">制作进度实时同步（连接异常时自动切换为轮询）</view>
+        <view v-else-if="terminalTip" class="code-tip a11y-sm a11y-dim">{{ terminalTip }}</view>
+      </view>
+
+      <!-- 等待预估与到店握手（T49，W19）：诚实标注波动区间 + 「我已到店」信号 -->
+      <view v-if="arrivable" class="card">
+        <view class="card-title a11y-md">等待预估</view>
+        <view class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">已等待</text>
+          <text class="eta-val a11y-md">{{ waitedText }}</text>
+        </view>
+        <view v-if="positionText" class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">队列位置</text>
+          <text class="eta-val a11y-md">{{ positionText }}</text>
+        </view>
+        <view v-if="estimateText" class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">预计还需</text>
+          <text class="eta-val a11y-md">{{ estimateText }}</text>
+        </view>
+        <view class="eta-note a11y-sm a11y-dim">
+          预估随队列实时变化，区间用于表达不确定性，不做精确承诺
+        </view>
+        <view class="arrive-btn a11y-md" :class="{ 'arrive-btn-done': !!arrivedAt }" @click="markArrived">
+          {{ arrivedAt ? '已告知商家你已到店' : arriveBusy ? '提交中…' : '我已到店' }}
+        </view>
       </view>
 
       <view class="card">
-        <view class="card-title">订单状态</view>
+        <view class="card-title a11y-md">订单状态</view>
         <view v-for="(node, index) in timeline" :key="index" class="timeline-node">
           <view class="node-dot" :class="{ 'node-dot-done': node.done }"></view>
           <view class="node-body">
-            <view class="node-label" :class="{ 'node-label-active': node.done }">{{ node.label }}</view>
-            <view class="node-time">{{ node.time ?? '—' }}</view>
+            <view class="node-label a11y-md" :class="{ 'node-label-active': node.done }">{{ node.label }}</view>
+            <view class="node-time a11y-sm a11y-dim">{{ node.time ?? '—' }}</view>
           </view>
         </view>
       </view>
 
       <view class="card">
-        <view class="card-title">订单信息</view>
-        <view class="info-line"><text class="info-label">订单号</text><text>{{ order.orderNo }}</text></view>
-        <view class="info-line"><text class="info-label">下单时间</text><text>{{ order.createdAt }}</text></view>
-        <view v-if="order.remark" class="info-line"><text class="info-label">备注</text><text>{{ order.remark }}</text></view>
-        <view class="info-line">
-          <text class="info-label">实付金额</text>
+        <view class="card-title a11y-md">订单信息</view>
+        <view class="info-line a11y-md"><text class="info-label a11y-dim">订单号</text><text>{{ order.orderNo }}</text></view>
+        <view class="info-line a11y-md"><text class="info-label a11y-dim">下单时间</text><text>{{ order.createdAt }}</text></view>
+        <view v-if="order.remark" class="info-line a11y-md"><text class="info-label a11y-dim">备注</text><text>{{ order.remark }}</text></view>
+        <view class="info-line a11y-md">
+          <text class="info-label a11y-dim">实付金额</text>
           <text class="info-amount">￥{{ order.totalAmount }}</text>
         </view>
         <view v-for="(item, index) in order.items" :key="index" class="goods-line">
           <view class="goods-main">
-            <text class="goods-name">{{ item.productName }}</text>
-            <text class="goods-qty">x{{ item.quantity }}</text>
+            <text class="goods-name a11y-md">{{ item.productName }}</text>
+            <text class="goods-qty a11y-sm a11y-dim">x{{ item.quantity }}</text>
           </view>
-          <view v-if="item.options.length" class="goods-spec">
+          <view v-if="item.options.length" class="goods-spec a11y-sm a11y-dim">
             {{ item.options.map((option) => option.optionName).join('/') }}
           </view>
-          <view class="goods-amount">￥{{ item.itemAmount }}</view>
+          <view class="goods-amount a11y-sm">￥{{ item.itemAmount }}</view>
         </view>
       </view>
 
@@ -275,6 +435,76 @@ function continuePay(): void {
 .detail-page {
   min-height: 100vh;
   padding: 24rpx;
+}
+
+/* 无障碍取餐提醒横幅（T45）：视觉信道的高对比强化块——黑底、高亮取餐码、最大字号。
+   与震动（触觉）、微信订阅消息（离线）共同构成「双信道取餐提醒」，三者同源同触发。 */
+.a11y-pickup-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 40rpx 32rpx;
+  margin-bottom: 24rpx;
+  text-align: center;
+  background: #000000;
+  border-radius: 20rpx;
+}
+
+.a11y-pickup-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.a11y-pickup-code {
+  font-size: 132rpx;
+  font-weight: 800;
+  letter-spacing: 8rpx;
+  color: #ffd400;
+}
+
+.a11y-pickup-tip {
+  font-size: 28rpx;
+  color: #ffffff;
+}
+
+/* 等待预估与到店握手（T49）：只读展示 + 一个可选的人工信号 */
+.eta-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+
+.eta-key {
+  color: #909399;
+}
+
+.eta-val {
+  font-weight: 600;
+}
+
+.eta-note {
+  margin-top: 10rpx;
+  line-height: 1.6;
+  color: #909399;
+}
+
+.arrive-btn {
+  margin-top: 24rpx;
+  height: 84rpx;
+  line-height: 84rpx;
+  font-size: 30rpx;
+  text-align: center;
+  color: #fff;
+  background: #409eff;
+  border-radius: 999rpx;
+}
+
+.arrive-btn-done {
+  color: #268356;
+  background: #e9f7f0;
 }
 
 .code-card {

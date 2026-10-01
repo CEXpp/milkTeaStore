@@ -2,19 +2,29 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { getOrderDetail, payOrder, type OrderDetail } from '@/api/order'
+import { getSubscribeTemplates, reportSubscribe, type SubscribeTemplate } from '@/api/subscribe'
 import { useCartStore } from '@/stores/cart'
+import { useA11yStore } from '@/stores/a11y'
 import { ApiError } from '@/utils/request'
 import { formatCents } from '@/utils/money'
 import { fromCompactDateTime } from '@/utils/datetime'
+import { requestSubscribeQuota } from '@/utils/wx-subscribe'
 
 /**
  * 支付确认页（T26，LLD 5.2「前端支付 UI 流三渠道统一」）：
  * - 进入即按订单 id 拉取后端详情，金额与明细一律以后端为准（本地购物车金额仅作对比提示）；
  * - 「模拟支付」→ POST /orders/{id}/pay → 成功后清空购物车并跳订单详情（取餐码页）；
  * - 真店期把「模拟支付」按钮换成微信支付组件即可，页面流与跳转不变（LLD 5.2）。
+ *
+ * T44 订阅消息授权（SRS 3.1「不弹任何授权窗口」）：
+ * - 授权时机落在「支付」这一次用户点击的调用栈内——微信 2.8.2 起只允许
+ *   「用户点击行为或支付回调后」调起订阅面板，而练手期 Mock 支付没有支付回调，故落在点击栈内；
+ * - 因此模板 ID 必须**提前**拉好（见 loadSubscribeTemplates），点击时直接用，中间不能 await 网络请求；
+ * - 用户拒绝 / 取不到模板 / 宿主不支持 → 一律静默跳过，不影响支付与取餐（SRS 9.3 降级）。
  */
 
 const cart = useCartStore()
+const a11y = useA11yStore()
 
 const orderId = ref<number | null>(null)
 /** 支付截止时间（下单响应带回，14 位纯数字透传，详情接口不含该字段） */
@@ -22,13 +32,25 @@ const expireAt = ref('')
 const order = ref<OrderDetail | null>(null)
 const loading = ref(true)
 const paying = ref(false)
+/** 可订阅模板：必须在用户点击前取好，点击时才能同步发起授权（见文件头注释） */
+const subscribeTemplates = ref<SubscribeTemplate[]>([])
 
 onLoad((query) => {
   const id = Number(query?.id)
   orderId.value = Number.isFinite(id) && id > 0 ? id : null
   expireAt.value = fromCompactDateTime(query?.expire ? String(query.expire) : '')
   void load()
+  void loadSubscribeTemplates()
 })
+
+/** 预取可订阅模板；失败静默（订阅只是增强，不弹提示打扰支付流程）。 */
+async function loadSubscribeTemplates(): Promise<void> {
+  try {
+    subscribeTemplates.value = await getSubscribeTemplates()
+  } catch {
+    subscribeTemplates.value = []
+  }
+}
 
 async function load(): Promise<void> {
   if (!orderId.value) {
@@ -64,14 +86,33 @@ async function pay(): Promise<void> {
   }
   paying.value = true
   try {
+    // T44：订阅授权必须在「点击行为」的同步调用栈内发起，故先于任何 await；
+    // 授权结果留到支付成功后再上报（授权本身失败只影响订阅提醒，不影响支付）
+    const acceptedPromise = requestSubscribeQuota(subscribeTemplates.value)
     const result = await payOrder(orderId.value)
-    // 支付成功：清空购物车 → 替换页面栈为取餐码页（返回键不再回到支付页）
+    // 支付成功：清空购物车 → 上报订阅授权 → 替换页面栈为取餐码页（返回键不再回到支付页）
     cart.clear()
+    await reportSubscribeQuota(acceptedPromise)
     uni.redirectTo({ url: `/pages/order-detail/index?id=${result.id}` })
   } catch (error) {
     await handlePayFailure(error)
   } finally {
     paying.value = false
+  }
+}
+
+/**
+ * 上报订阅授权结果（T44）：服务端登记后，订单进入制作 / 出餐才会推微信消息给顾客。
+ * 任何失败都静默吞掉——订阅是增强项，不能污染支付成功这条主链路（SRS 9.3 降级）。
+ */
+async function reportSubscribeQuota(acceptedPromise: Promise<string[]>): Promise<void> {
+  try {
+    const accepted = await acceptedPromise
+    if (accepted.length > 0) {
+      await reportSubscribe(accepted)
+    }
+  } catch {
+    // 静默降级：授权或上报失败都不影响支付结果
   }
 }
 
@@ -104,14 +145,14 @@ function cancel(): void {
 </script>
 
 <template>
-  <view class="pay-page">
+  <view class="pay-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="loading" class="page-tip">订单加载中…</view>
 
     <template v-else-if="order">
       <view class="amount-card">
-        <view class="amount-label">应付金额</view>
-        <view class="amount-value">￥{{ order.totalAmount }}</view>
-        <view class="amount-order">订单号 {{ order.orderNo }}</view>
+        <view class="amount-label a11y-md a11y-dim">应付金额</view>
+        <view class="amount-value a11y-lg">￥{{ order.totalAmount }}</view>
+        <view class="amount-order a11y-sm a11y-dim">订单号 {{ order.orderNo }}</view>
         <view v-if="expireAt" class="amount-expire">请于 {{ expireAt }} 前完成支付（超时自动关单）</view>
       </view>
 

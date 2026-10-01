@@ -101,4 +101,43 @@ page {
   font-size: 24rpx;
   color: #c0c4cc;
 }
+
+/* ============================================================================
+   无障碍模式（T45，SRS 9.6 / LLD 11.4）——纯呈现层放大与高对比
+   开启方式：页面根节点挂 .a11y-mode class（见 stores/a11y.ts）。
+   纪律：这里只改「信息如何被看到」，不改「信息是什么」——不碰任何数据、状态机与接口。
+   ============================================================================ */
+
+/* 高对比底：纯白底 + 纯黑字，柜台强光下对比度最高；并抬高继承基准字号 */
+.a11y-mode {
+  min-height: 100vh;
+  background-color: #ffffff;
+  color: #000000;
+  font-size: 32rpx;
+}
+
+/* 辅助文字加深：普通模式下的浅灰（#909399 / #c0c4cc）在强光下几乎不可见 */
+.a11y-mode .a11y-dim {
+  color: #333333 !important;
+}
+
+/* 放大档位：页面按语义给元素挂档，无需改动任何布局结构 */
+.a11y-mode .a11y-sm {
+  font-size: 30rpx !important;
+}
+
+.a11y-mode .a11y-md {
+  font-size: 36rpx !important;
+}
+
+.a11y-mode .a11y-lg {
+  font-size: 46rpx !important;
+}
+
+/* 取餐码：无障碍模式下进一步放大加粗——取餐场景的核心信息，必须一眼可辨 */
+.a11y-mode .a11y-code {
+  font-size: 180rpx !important;
+  font-weight: 800 !important;
+  letter-spacing: 8rpx;
+}
 </style>

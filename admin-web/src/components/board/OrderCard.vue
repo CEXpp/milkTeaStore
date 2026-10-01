@@ -31,6 +31,9 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const sourceLabel = computed(() => SOURCE_LABELS[props.order.source] ?? props.order.source)
 
+/** 到店握手标记（T49）：只有待制作卡片带这个信号；仅用于提示，不改变卡片顺序 */
+const arrived = computed(() => props.mode === 'pending' && (props.order as BoardPendingOrder).arrived === true)
+
 const minutesText = computed(() => {
   if (props.mode === 'pending') {
     return `等待 ${(props.order as BoardPendingOrder).minutesWaiting} 分钟`
@@ -43,7 +46,11 @@ const minutesText = computed(() => {
   <div class="order-card" :class="{ 'is-new': highlighted, 'is-preparing': mode === 'preparing' }">
     <div class="card-head">
       <span class="pickup-code">{{ order.pickupCode }}</span>
-      <span class="source-tag">{{ sourceLabel }}</span>
+      <span class="head-tags">
+        <!-- 到店握手（T49）：顾客已在店等餐。仅提示——排序不变、统计不变，店长可优先处理也可无视 -->
+        <span v-if="arrived" class="arrived-tag" title="顾客已申报到店">已到店</span>
+        <span class="source-tag">{{ sourceLabel }}</span>
+      </span>
     </div>
 
     <div class="card-items">
@@ -96,6 +103,22 @@ const minutesText = computed(() => {
 .order-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-hover);
+}
+
+.head-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+/* 到店握手标记（T49）：醒目提示顾客已在店等餐；不改变任何排序与统计口径 */
+.arrived-tag {
+  padding: 2px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--c-danger);
+  border-radius: var(--radius-pill);
 }
 
 /* 新单高亮 30 秒：伪元素呼吸（只动画 opacity，不触发重绘） */
