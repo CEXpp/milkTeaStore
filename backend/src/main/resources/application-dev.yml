@@ -71,6 +71,18 @@ app:
 # 订单（T10）：支付期限（分钟），下单响应 expireAt = createdAt + 该值（LLD 3.3 / 4.2）
 order:
   payment-timeout-minutes: 15
+# 队列预估内核（T46，LLD 11.6）：下列为默认值，可被 shop_config（KV 表）按运行期覆盖——
+# 覆盖键为 queue.prep-minutes / queue.staff / queue.volatility（见 QueueEstimateService）；
+# buffer-minutes 按 LLD 定位为「常量安全垫」，不开放运行期覆盖。
+queue:
+  # 单杯基准耗时 t_unit（分钟，任务卡「单杯基准耗时」）
+  prep-minutes: ${QUEUE_PREP_MINUTES:3}
+  # 在岗制作单元数 s（≥1）
+  staff: ${QUEUE_STAFF:1}
+  # 历史波动系数 k（T69 爆单预测可校准）
+  volatility: ${QUEUE_VOLATILITY:0.3}
+  # 误差常量安全垫 buffer（分钟）
+  buffer-minutes: ${QUEUE_BUFFER_MINUTES:1}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）
