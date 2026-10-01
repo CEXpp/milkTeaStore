@@ -61,6 +61,14 @@ public class Order {
     /** 口味备注。 */
     private String remark;
 
+    /**
+     * 结构化备注标签（V3 加列 {@code orders.remark_tags}，JSON 数组）。
+     *
+     * <p>由 T53（备注语义结构化）写入；在那之前该列恒为 {@code null}。T58 出餐核对清单只读它的
+     * <b>条数</b>用于提示「本单有 N 项特殊要求」，不解析具体语义——避免越界替 T53 做理解。</p>
+     */
+    private String remarkTags;
+
     /** 支付时间（进入 PAID）。 */
     private LocalDateTime paidAt;
 

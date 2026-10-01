@@ -126,3 +126,40 @@ export function voidOrder(id: number, data: VoidOrderRequest): Promise<AdminOrde
 export function createCounterOrder(data: CounterOrderRequest): Promise<CounterOrderResult> {
   return request<CounterOrderResult>({ url: '/admin/counter-orders', method: 'post', data })
 }
+
+/** 出餐核对清单的一行规格（T58） */
+export interface OrderChecklistOption {
+  /** 规格组名：杯型 / 温度 / 甜度 / 加料 */
+  groupName: string
+  optionName: string
+}
+
+/** 出餐核对清单的订单项（T58） */
+export interface OrderChecklistItem {
+  productName: string
+  quantity: number
+  options: OrderChecklistOption[]
+}
+
+/** GET /api/admin/orders/{id}/checklist 响应 data（T58，W20） */
+export interface OrderChecklist {
+  orderId: number
+  orderNo: string
+  pickupCode: string
+  source: OrderSource
+  /** 整单口味备注 */
+  remark: string | null
+  /** 结构化备注标签条数（T53 落地前恒为 0） */
+  remarkTagCount: number
+  items: OrderChecklistItem[]
+}
+
+/**
+ * 出餐核对清单（T58，W20）。
+ *
+ * 规格明细直接取自订单项快照（不经过摘要字符串拼接），因此不会漏掉加料。
+ * **纯只读**：出餐仍走原状态机规则，前端勾选只是防错交互。
+ */
+export function getOrderChecklist(orderId: number): Promise<OrderChecklist> {
+  return request<OrderChecklist>({ url: `/admin/orders/${orderId}/checklist`, method: 'get' })
+}

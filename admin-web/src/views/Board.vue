@@ -4,10 +4,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   completeOrder,
   getOrderBoard,
+  getOrderChecklist,
   startOrder,
   voidOrder,
   type BoardSlaSettings,
-  type OrderBoardResult
+  type OrderBoardResult,
+  type OrderChecklist
 } from '@/api/order'
 import { getQueuePace, type QueuePace } from '@/api/queue'
 import { updateSla } from '@/api/shop'
@@ -58,6 +60,13 @@ let tickTimer: number | null = null
 const slaDialogVisible = ref(false)
 const slaSaving = ref(false)
 const slaForm = reactive({ warnSeconds: 300, dangerSeconds: 600 })
+
+/** 出餐核对清单（T58）：出餐前逐项勾选，全勾完才允许确认——纯前端防错，不动状态机 */
+const checklistVisible = ref(false)
+const checklistLoading = ref(false)
+const checklistOrderId = ref<number | null>(null)
+const checklist = ref<OrderChecklist | null>(null)
+const checkedKeys = ref<string[]>([])
 const highlightedIds = ref<number[]>([])
 const busyIds = ref<number[]>([])
 
@@ -384,7 +393,57 @@ function handleStart(orderId: number): void {
   void runAction(orderId, () => startOrder(orderId), '已开始制作')
 }
 
-function handleComplete(orderId: number): void {
+/** 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾 */
+const checklistLines = computed(() => {
+  const lines: Array<{ key: string; text: string }> = []
+  checklist.value?.items.forEach((item, itemIndex) => {
+    item.options.forEach((option, optionIndex) => {
+      lines.push({
+        key: `${itemIndex}-${optionIndex}`,
+        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`
+      })
+    })
+  })
+  return lines
+})
+
+/** 全部勾完才允许确认出餐；无规格明细时视为已勾完，避免无谓卡死 */
+const checklistAllChecked = computed(
+  () => checklistLines.value.length === 0 || checkedKeys.value.length >= checklistLines.value.length
+)
+
+/**
+ * 出餐（T58）：先拉核对清单并弹窗逐项勾选，全部勾完才允许确认。
+ *
+ * 说明：这只是**前端防错交互**——后端出餐仍按 6.1 原规则校验，状态机规则一字未改
+ * （任务卡「确认不是状态迁移的前置条件」）。
+ */
+async function handleComplete(orderId: number): Promise<void> {
+  if (checklistLoading.value) {
+    return
+  }
+  checklistLoading.value = true
+  try {
+    checklist.value = await getOrderChecklist(orderId)
+    checklistOrderId.value = orderId
+    checkedKeys.value = []
+    checklistVisible.value = true
+  } catch {
+    // 拉取失败已由 request 层提示；此处不直接出餐，避免跳过核对
+  } finally {
+    checklistLoading.value = false
+  }
+}
+
+/** 确认出餐：走原有动作通道（含 busy 防抖 + 成功后刷新看板） */
+function confirmComplete(): void {
+  const orderId = checklistOrderId.value
+  checklistVisible.value = false
+  checklist.value = null
+  checklistOrderId.value = null
+  if (orderId === null) {
+    return
+  }
   void runAction(orderId, () => completeOrder(orderId), '已出餐')
 }
 
@@ -553,6 +612,31 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="slaSaving" @click="saveSla">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 出餐核对清单（T58）：逐项勾选，全勾完才可确认。纯前端防错，后端状态机规则不变 -->
+    <el-dialog v-model="checklistVisible" title="出餐核对" width="440px">
+      <div v-if="checklist" class="checklist">
+        <div class="checklist-head">
+          <span>取餐码 <strong>{{ checklist.pickupCode }}</strong></span>
+          <span v-if="checklist.remarkTagCount > 0" class="special-tag">
+            本单有 {{ checklist.remarkTagCount }} 项特殊要求
+          </span>
+        </div>
+        <p v-if="checklist.remark" class="checklist-remark">备注：{{ checklist.remark }}</p>
+        <el-checkbox-group v-model="checkedKeys" class="checklist-body">
+          <el-checkbox v-for="line in checklistLines" :key="line.key" :label="line.key">
+            {{ line.text }}
+          </el-checkbox>
+        </el-checkbox-group>
+        <p v-if="!checklistLines.length" class="checklist-empty">该单无规格明细</p>
+      </div>
+      <template #footer>
+        <el-button @click="checklistVisible = false">取消</el-button>
+        <el-button type="success" :disabled="!checklistAllChecked" @click="confirmComplete">
+          确认出餐
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -585,6 +669,44 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: var(--fs-xs);
   line-height: 1.6;
+  color: var(--text-3);
+}
+
+/* 出餐核对清单（T58） */
+.checklist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+}
+
+.special-tag {
+  padding: 2px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--c-danger);
+  border-radius: var(--radius-pill);
+}
+
+.checklist-remark {
+  margin: 0 0 var(--gap-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.checklist-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.checklist-empty {
+  margin: 0;
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 

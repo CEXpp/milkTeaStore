@@ -9,6 +9,7 @@ import com.milktea.order.order.service.OrderService;
 import com.milktea.order.order.vo.AdminOrderSummaryVo;
 import com.milktea.order.order.vo.BoardVo;
 import com.milktea.order.order.vo.CounterOrderVo;
+import com.milktea.order.order.vo.OrderChecklistVo;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +47,17 @@ public class AdminOrderController {
     @GetMapping("/orders/board")
     public R<BoardVo> board() {
         return R.ok(adminOrderService.board());
+    }
+
+    /**
+     * 出餐核对清单（T58，W20）：该单的规格快照明细（杯型 / 温度 / 甜度 / 加料）与备注。
+     *
+     * <p><b>纯只读</b>：出餐仍按 6.1 原规则走状态机，勾选确认只是前端的防错交互，
+     * <b>不是</b>状态迁移的前置条件（任务卡「设计纪律」）。</p>
+     */
+    @GetMapping("/orders/{id}/checklist")
+    public R<OrderChecklistVo> checklist(@PathVariable("id") Long id) {
+        return R.ok(adminOrderService.checklist(id));
     }
 
     /**

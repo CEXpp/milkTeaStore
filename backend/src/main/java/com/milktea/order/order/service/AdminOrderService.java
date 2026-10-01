@@ -17,12 +17,14 @@ import com.milktea.order.order.vo.BoardPendingCardVo;
 import com.milktea.order.order.vo.BoardPreparingCardVo;
 import com.milktea.order.order.vo.BoardTodayVo;
 import com.milktea.order.order.vo.BoardVo;
+import com.milktea.order.order.vo.OrderChecklistVo;
 import com.milktea.order.shop.service.SlaSettingsService;
 import com.milktea.order.shop.vo.SlaSettingsVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -255,6 +257,72 @@ public class AdminOrderService {
         vo.setVoidedAt(format(order.getVoidedAt()));
         vo.setVoidReason(order.getVoidReason());
         return vo;
+    }
+
+    /**
+     * 出餐核对清单（T58，W20）。
+     *
+     * <p><b>只读</b>：不改订单状态、不做任何校验判定——出餐仍由 {@link #complete(Long)} 按 6.1
+     * 原规则走状态机。勾选清单纯粹是前端的防错交互（任务卡「确认不是状态迁移的前置条件」）。</p>
+     *
+     * <p>规格明细直接取自 {@code order_item.options_snapshot}，<b>不经过任何摘要字符串拼接</b>，
+     * 因此不会「漏掉加料」（验收项「清单与快照完全一致」）。</p>
+     *
+     * @throws BusinessException 1004 订单不存在
+     */
+    public OrderChecklistVo checklist(Long orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT.getCode(), "订单不存在");
+        }
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getOrderId, orderId)
+                .orderByAsc(OrderItem::getId));
+
+        List<OrderChecklistVo.Item> itemVos = new ArrayList<>(items.size());
+        for (OrderItem item : items) {
+            itemVos.add(new OrderChecklistVo.Item(
+                    item.getProductName(),
+                    item.getQuantity() == null ? 0 : item.getQuantity(),
+                    optionLines(item.getOptionsSnapshot())));
+        }
+        return new OrderChecklistVo(orderId, order.getOrderNo(), order.getPickupCode(), order.getSource(),
+                order.getRemark(), countRemarkTags(order.getRemarkTags()), itemVos);
+    }
+
+    /** 规格快照 → 逐行规格（保留分组名，前端据此把「加料」等易漏项标出来）。 */
+    private List<OrderChecklistVo.OptionLine> optionLines(String json) {
+        if (json == null || json.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            OptionSnapshot[] arr = JSON.readValue(json, OptionSnapshot[].class);
+            if (arr == null) {
+                return Collections.emptyList();
+            }
+            List<OrderChecklistVo.OptionLine> lines = new ArrayList<>(arr.length);
+            for (OptionSnapshot option : arr) {
+                lines.add(new OrderChecklistVo.OptionLine(option.getGroupName(), option.getOptionName()));
+            }
+            return lines;
+        } catch (Exception e) {
+            log.warn("[T58] 规格快照解析失败，核对清单按空规格返回：{}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /** 结构化备注标签条数（T42 的 {@code orders.remark_tags}；T53 落地前恒为 0）。 */
+    private int countRemarkTags(String json) {
+        if (json == null || json.isBlank()) {
+            return 0;
+        }
+        try {
+            JsonNode node = JSON.readTree(json);
+            return node != null && node.isArray() ? node.size() : 0;
+        } catch (Exception e) {
+            log.warn("[T58] 备注标签解析失败，按 0 处理：{}", e.getMessage());
+            return 0;
+        }
     }
 
     private BoardPendingCardVo toPendingCard(Order order, List<OrderItem> items, long minutes) {
