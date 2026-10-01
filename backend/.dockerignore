@@ -1,6 +1,8 @@
-# backend/.dockerignore —— 缩小镜像构建上下文，排除构建产物与版本控制目录
-**/target
-**/.git
-**/.idea
-**/*.iml
-**/debug.log
+# 不把这些送进构建上下文（上下文越小构建越快，也不会污染层缓存）
+target/
+*.log
+mvnw
+mvnw.cmd
+.mvn/
+.idea/
+.vscode/

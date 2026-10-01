@@ -1,18 +1,8 @@
 <script setup lang="ts">
-// 根组件仅承载路由出口；全局基础样式在此声明，避免额外样式文件。
+// 根组件仅承载路由出口：登录页为独立路由，业务页由 AdminLayout 嵌套承载。
+// 全局基础样式已抽到 src/styles/*，在 main.ts 中按序引入。
 </script>
 
 <template>
   <router-view />
 </template>
-
-<style>
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
-  background-color: #f5f7fa;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
-}
-</style>

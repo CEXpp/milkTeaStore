@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { getStatsSummary, getStatsTrend, type StatsSummary, type StatsTrendItem } from '@/api/stats'
 import type { OrderSource } from '@/api/order'
+import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 import AdminPageHeader from '@/components/AdminPageHeader.vue'
+import StatBar from '@/components/board/StatBar.vue'
 import TrendChart from '@/components/stats/TrendChart.vue'
 import RankTable from '@/components/stats/RankTable.vue'
 import OrderFlow from '@/components/stats/OrderFlow.vue'
@@ -18,6 +21,8 @@ import OrderFlow from '@/components/stats/OrderFlow.vue'
  * 订单数含作废、退款额单列。本页只做展示，不做二次计算。
  */
 
+defineOptions({ name: 'Stats' })
+
 /** 趋势固定看近 7 日（施工卡「近 7 日趋势」） */
 const TREND_DAYS = 7
 
@@ -25,6 +30,13 @@ const SOURCE_LABEL: Record<OrderSource, string> = {
   MINI_PROGRAM: '小程序',
   AI: 'AI',
   COUNTER: '柜台'
+}
+
+/** 渠道卡片配色（小程序 / AI / 柜台） */
+const SOURCE_TONE: Record<string, 'brand' | 'success' | 'warning'> = {
+  MINI_PROGRAM: 'brand',
+  AI: 'warning',
+  COUNTER: 'success'
 }
 
 /** 本地「今天」yyyy-MM-dd：用本地时区拼装，避免 toISOString 的 UTC 偏移串日 */
@@ -39,6 +51,23 @@ const date = ref(todayLocal())
 const summary = ref<StatsSummary | null>(null)
 const trend = ref<StatsTrendItem[]>([])
 const loading = ref(false)
+
+/** 适配看板 KPI 卡：字段名对齐 BoardTodaySummary（amount ← totalAmount） */
+const todayMetric = computed(() =>
+  summary.value
+    ? {
+        orderCount: summary.value.orderCount,
+        amount: summary.value.totalAmount,
+        cupCount: summary.value.cupCount,
+        refundAmount: summary.value.refundAmount
+      }
+    : null
+)
+
+/** 渠道占比条：以单量最大值为基准，仅用于视觉长度，不改变数值口径 */
+const channelMax = computed(() =>
+  Math.max(1, ...(summary.value?.channel ?? []).map((item) => item.orderCount))
+)
 
 async function loadSummary(): Promise<void> {
   loading.value = true
@@ -64,13 +93,14 @@ function refresh(): void {
   void loadTrend()
 }
 
-onMounted(refresh)
+// 挂载时与 keep-alive 重新激活时各取数一次，保持「进入即取数」的行为
+useMountOrActivateRefresh(refresh)
 watch(date, () => void loadSummary())
 </script>
 
 <template>
   <div class="stats-page">
-    <AdminPageHeader title="账台统计">
+    <AdminPageHeader title="账台统计" :subtitle="`统计日期 ${summary?.date ?? date}`">
       <el-date-picker
         v-model="date"
         type="date"
@@ -78,63 +108,53 @@ watch(date, () => void loadSummary())
         placeholder="选择统计日期"
         size="small"
         :clearable="false"
+        class="date-picker"
       />
-      <el-button size="small" type="primary" plain :loading="loading" @click="refresh">刷新</el-button>
+      <el-button size="small" type="primary" plain :icon="Refresh" :loading="loading" @click="refresh">
+        刷新
+      </el-button>
     </AdminPageHeader>
 
-    <el-row :gutter="12" class="overview">
-      <el-col :xs="12" :sm="6">
-        <el-card shadow="never" class="metric-card">
-          <div class="metric-label">营业额(元)</div>
-          <div class="metric-value primary">{{ summary?.totalAmount ?? '0.00' }}</div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="6">
-        <el-card shadow="never" class="metric-card">
-          <div class="metric-label">订单数</div>
-          <div class="metric-value">{{ summary?.orderCount ?? 0 }}</div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="6">
-        <el-card shadow="never" class="metric-card">
-          <div class="metric-label">售出杯数</div>
-          <div class="metric-value">{{ summary?.cupCount ?? 0 }}</div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="6">
-        <el-card shadow="never" class="metric-card">
-          <div class="metric-label">退款额(元)</div>
-          <div class="metric-value danger">{{ summary?.refundAmount ?? '0.00' }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <StatBar :today="todayMetric" />
 
-    <el-card shadow="never" class="channel-card">
-      <template #header>
-        <div class="card-head">
-          <span class="card-title">渠道分布</span>
-          <span class="card-sub">{{ summary?.date ?? date }}</span>
+    <div class="stats-grid">
+      <el-card shadow="never" class="channel-card">
+        <template #header>
+          <div class="card-head">
+            <span class="card-title">渠道分布</span>
+            <span class="card-sub">{{ summary?.date ?? date }}</span>
+          </div>
+        </template>
+        <el-empty v-if="!(summary?.channel.length)" description="该日各渠道均无成交" :image-size="60" class="app-empty" />
+        <div v-else class="channel-list">
+          <div
+            v-for="item in summary?.channel ?? []"
+            :key="item.source"
+            class="channel-item"
+            :class="`tone-${SOURCE_TONE[item.source] ?? 'brand'}`"
+          >
+            <div class="channel-top">
+              <span class="channel-name">{{ SOURCE_LABEL[item.source] ?? item.source }}</span>
+              <span class="channel-count">{{ item.orderCount }} 单</span>
+            </div>
+            <div class="channel-bar">
+              <span class="bar-fill" :style="{ width: `${(item.orderCount / channelMax) * 100}%` }" />
+            </div>
+            <div class="channel-amount">{{ item.amount }} 元</div>
+          </div>
         </div>
-      </template>
-      <el-empty v-if="!(summary?.channel.length)" description="该日各渠道均无成交" :image-size="60" />
-      <div v-else class="channel-list">
-        <div v-for="item in summary?.channel ?? []" :key="item.source" class="channel-item">
-          <div class="channel-name">{{ SOURCE_LABEL[item.source] ?? item.source }}</div>
-          <div class="channel-count">{{ item.orderCount }} 单</div>
-          <div class="channel-amount">{{ item.amount }} 元</div>
-        </div>
-      </div>
-    </el-card>
+      </el-card>
 
-    <el-card shadow="never" class="trend-card">
-      <template #header>
-        <div class="card-head">
-          <span class="card-title">近 {{ TREND_DAYS }} 日趋势</span>
-          <span class="card-sub">左轴营业额 · 右轴订单数</span>
-        </div>
-      </template>
-      <TrendChart :items="trend" />
-    </el-card>
+      <el-card shadow="never" class="trend-card">
+        <template #header>
+          <div class="card-head">
+            <span class="card-title">近 {{ TREND_DAYS }} 日趋势</span>
+            <span class="card-sub">左轴营业额 · 右轴订单数</span>
+          </div>
+        </template>
+        <TrendChart :items="trend" />
+      </el-card>
+    </div>
 
     <div class="bottom-grid">
       <RankTable />
@@ -145,88 +165,124 @@ watch(date, () => void loadSummary())
 
 <style scoped>
 .stats-page {
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-4);
 }
 
-.overview {
-  margin-bottom: 12px;
+.date-picker {
+  width: 150px;
 }
 
-.metric-card {
-  margin-bottom: 12px;
+.stats-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: var(--gap-4);
+  align-items: start;
 }
 
-.metric-label {
-  color: #909399;
-  font-size: 13px;
-}
-
-.metric-value {
-  margin-top: 6px;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.metric-value.primary {
-  color: #409eff;
-}
-
-.metric-value.danger {
-  color: #f56c6c;
+@media (max-width: 1280px) {
+  .stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--gap-3);
 }
 
 .card-title {
+  font-size: var(--fs-h2);
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .card-sub {
-  color: #909399;
-  font-size: 12px;
-}
-
-.channel-card,
-.trend-card {
-  margin-bottom: 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .channel-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  gap: var(--gap-3);
 }
 
 .channel-item {
-  flex: 1 1 160px;
-  padding: 12px;
-  border-radius: 6px;
-  background: #f5f7fa;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+}
+
+.channel-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
 }
 
 .channel-name {
+  font-size: var(--fs-body);
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .channel-count {
-  margin-top: 4px;
-  color: #909399;
-  font-size: 13px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.channel-bar {
+  height: 6px;
+  margin: 8px 0 6px;
+  overflow: hidden;
+  background: #e9edf5;
+  border-radius: var(--radius-pill);
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+.tone-brand .bar-fill {
+  background: linear-gradient(90deg, var(--brand-400) 0%, var(--brand-600) 100%);
+}
+
+.tone-success .bar-fill {
+  background: linear-gradient(90deg, #4ec38c 0%, var(--c-success) 100%);
+}
+
+.tone-warning .bar-fill {
+  background: linear-gradient(90deg, #f0c274 0%, var(--c-warning) 100%);
 }
 
 .channel-amount {
-  margin-top: 2px;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-card {
+  min-width: 0;
 }
 
 .bottom-grid {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+  gap: var(--gap-4);
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .bottom-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

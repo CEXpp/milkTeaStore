@@ -6,6 +6,7 @@ import { formatCents } from '@/utils/money'
 /**
  * 柜台点单右栏（T20）：草稿列表（增删 / 数量步进）+ 整单备注 + 合计 + 确认收款。
  * 合计为本地展示值（分运算），实付金额以下单接口返回为准。
+ * 事件契约与数量上限（1..20）保持原样，仅重做排版与视觉。
  */
 const props = defineProps<{
   lines: DraftLine[]
@@ -23,9 +24,7 @@ const emit = defineEmits<{
 
 const MAX_QTY = 20
 
-const totalCents = computed(() =>
-  props.lines.reduce((sum, line) => sum + line.unitCents * line.quantity, 0)
-)
+const totalCents = computed(() => props.lines.reduce((sum, line) => sum + line.unitCents * line.quantity, 0))
 
 const totalCups = computed(() => props.lines.reduce((sum, line) => sum + line.quantity, 0))
 </script>
@@ -35,42 +34,55 @@ const totalCups = computed(() => props.lines.reduce((sum, line) => sum + line.qu
     <div class="draft-head">
       <span class="draft-title">点单草稿</span>
       <span class="draft-count">{{ totalCups }} 杯</span>
-      <el-button v-if="lines.length" link type="danger" @click="emit('clear')">清空</el-button>
+      <el-button v-if="props.lines.length" link type="danger" size="small" @click="emit('clear')">清空</el-button>
     </div>
 
     <div class="draft-list">
-      <el-empty v-if="!lines.length" description="点击左侧商品开始点单" :image-size="60" />
-      <div v-for="line in lines" :key="line.key" class="draft-line">
-        <div class="line-info">
-          <div class="line-name">{{ line.productName }}</div>
-          <div class="line-spec">{{ line.specText || '默认规格' }}</div>
+      <el-empty
+        v-if="!props.lines.length"
+        description="点击左侧商品开始点单"
+        :image-size="60"
+        class="app-empty"
+      />
+      <TransitionGroup v-else name="list-item" tag="div" class="draft-lines">
+        <div v-for="line in props.lines" :key="line.key" class="draft-line">
+          <div class="line-info">
+            <div class="line-name">{{ line.productName }}</div>
+            <div class="line-spec">{{ line.specText || '默认规格' }}</div>
+          </div>
+          <div class="line-right">
+            <span class="line-amount">￥{{ formatCents(line.unitCents * line.quantity) }}</span>
+            <div class="line-controls">
+              <button
+                type="button"
+                class="step-btn"
+                :disabled="line.quantity <= 1"
+                aria-label="减少数量"
+                @click="emit('change-qty', line.key, -1)"
+              >
+                −
+              </button>
+              <span class="line-qty">{{ line.quantity }}</span>
+              <button
+                type="button"
+                class="step-btn"
+                :disabled="line.quantity >= MAX_QTY"
+                aria-label="增加数量"
+                @click="emit('change-qty', line.key, 1)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+          <button type="button" class="remove-btn" aria-label="删除该行" @click="emit('remove', line.key)">
+            ×
+          </button>
         </div>
-        <div class="line-controls">
-          <el-button
-            size="small"
-            circle
-            :disabled="line.quantity <= 1"
-            @click="emit('change-qty', line.key, -1)"
-          >
-            −
-          </el-button>
-          <span class="line-qty">{{ line.quantity }}</span>
-          <el-button
-            size="small"
-            circle
-            :disabled="line.quantity >= MAX_QTY"
-            @click="emit('change-qty', line.key, 1)"
-          >
-            +
-          </el-button>
-        </div>
-        <div class="line-amount">￥{{ formatCents(line.unitCents * line.quantity) }}</div>
-        <el-button size="small" link type="danger" @click="emit('remove', line.key)">删除</el-button>
-      </div>
+      </TransitionGroup>
     </div>
 
     <el-input
-      :model-value="remark"
+      :model-value="props.remark"
       class="draft-remark"
       placeholder="整单备注（选填，如：老客户少放糖）"
       maxlength="50"
@@ -79,14 +91,15 @@ const totalCups = computed(() => props.lines.reduce((sum, line) => sum + line.qu
 
     <div class="draft-footer">
       <div class="draft-total">
-        合计 <b>￥{{ formatCents(totalCents) }}</b>
+        <span class="total-label">合计</span>
+        <b class="total-value">￥{{ formatCents(totalCents) }}</b>
       </div>
       <el-button
         type="primary"
         size="large"
         class="checkout-btn"
-        :loading="submitting"
-        :disabled="!lines.length"
+        :loading="props.submitting"
+        :disabled="!props.lines.length"
         @click="emit('checkout')"
       >
         确认收款（Ctrl+Enter）
@@ -106,33 +119,57 @@ const totalCups = computed(() => props.lines.reduce((sum, line) => sum + line.qu
 .draft-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--gap-2);
+  padding-bottom: var(--gap-3);
+  margin-bottom: var(--gap-2);
+  border-bottom: 1px solid var(--border);
 }
 
 .draft-title {
-  font-size: 15px;
+  font-size: var(--fs-h2);
   font-weight: 600;
-  color: #303133;
+  color: var(--text-1);
 }
 
 .draft-count {
-  font-size: 12px;
-  color: #909399;
+  margin-right: auto;
+  padding: 1px 8px;
+  font-size: var(--fs-xs);
+  color: var(--brand-600);
+  background: var(--brand-050);
+  border-radius: var(--radius-pill);
 }
 
 .draft-list {
+  position: relative;
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  max-height: calc(100vh - 320px);
+}
+
+.draft-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
 }
 
 .draft-line {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px dashed #ebeef5;
+  gap: var(--gap-3);
+  padding: 10px 30px 10px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.draft-line:hover {
+  background: #fff;
+  border-color: var(--brand-400);
 }
 
 .line-info {
@@ -141,59 +178,140 @@ const totalCups = computed(() => props.lines.reduce((sum, line) => sum + line.qu
 }
 
 .line-name {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 500;
-  color: #303133;
+  color: var(--text-1);
 }
 
 .line-spec {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #909399;
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
   word-break: break-all;
+}
+
+.line-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.line-amount {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--c-danger);
+  font-variant-numeric: tabular-nums;
 }
 
 .line-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--gap-1);
+}
+
+.step-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-2);
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.step-btn:hover:not(:disabled) {
+  color: var(--brand-500);
+  border-color: var(--brand-400);
+  background: var(--brand-050);
+}
+
+.step-btn:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .line-qty {
-  min-width: 22px;
+  min-width: 24px;
   text-align: center;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.line-amount {
-  min-width: 76px;
-  text-align: right;
-  font-size: 14px;
-  font-weight: 600;
-  color: #f56c6c;
+.remove-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0.5;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.draft-line:hover .remove-btn {
+  opacity: 1;
+}
+
+.remove-btn:hover {
+  color: var(--c-danger);
+  background: var(--c-danger-soft);
 }
 
 .draft-remark {
-  margin: 10px 0;
+  margin: var(--gap-3) 0 0;
 }
 
 .draft-footer {
-  padding-top: 10px;
-  border-top: 1px solid #ebeef5;
+  padding-top: var(--gap-3);
+  margin-top: var(--gap-2);
+  border-top: 1px solid var(--border);
 }
 
 .draft-total {
-  margin-bottom: 8px;
-  font-size: 15px;
-  color: #606266;
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-3);
 }
 
-.draft-total b {
-  font-size: 24px;
-  color: #f56c6c;
+.total-label {
+  font-size: var(--fs-body);
+  color: var(--text-2);
+}
+
+.total-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--c-danger);
+  font-variant-numeric: tabular-nums;
 }
 
 .checkout-btn {
   width: 100%;
+  height: 46px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
 }
 </style>

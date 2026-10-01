@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import {
   fileUrl,
   getCategories,
@@ -124,17 +125,17 @@ onMounted(() => {
 
 <template>
   <div class="products-page">
-    <AdminPageHeader title="商品管理">
-      <el-button type="primary" @click="openCreate">新建商品</el-button>
+    <AdminPageHeader title="商品管理" subtitle="上下架即时同步顾客端菜单">
+      <el-button type="primary" :icon="Plus" @click="openCreate">新建商品</el-button>
     </AdminPageHeader>
 
-    <main class="page-body">
+    <main class="app-panel">
       <div class="filter-bar">
         <el-select
           v-model="filterCategoryId"
           placeholder="全部分类"
           clearable
-          style="width: 180px"
+          class="filter-select"
           @change="handleSearch"
         >
           <el-option
@@ -144,13 +145,7 @@ onMounted(() => {
             :value="category.id"
           />
         </el-select>
-        <el-select
-          v-model="filterStatus"
-          placeholder="全部状态"
-          clearable
-          style="width: 140px"
-          @change="handleSearch"
-        >
+        <el-select v-model="filterStatus" placeholder="全部状态" clearable class="filter-select" @change="handleSearch">
           <el-option label="上架中" :value="1" />
           <el-option label="已下架" :value="0" />
         </el-select>
@@ -158,12 +153,21 @@ onMounted(() => {
         <span class="filter-hint">下架后顾客端菜单立即隐藏（AC-08）</span>
       </div>
 
-      <el-table v-loading="loading" :data="products" border stripe>
+      <el-table v-loading="loading" :data="products">
         <el-table-column label="图" width="88" align="center">
           <template #default="{ row }">
-            <el-image v-if="row.imageKey" :src="fileUrl(row.imageKey)" fit="cover" class="thumb">
+            <el-image
+              v-if="row.imageKey"
+              :src="fileUrl(row.imageKey)"
+              fit="cover"
+              lazy
+              class="thumb"
+            >
               <template #error>
                 <div class="thumb-error">无图</div>
+              </template>
+              <template #placeholder>
+                <div class="thumb-error">…</div>
               </template>
             </el-image>
             <div v-else class="thumb thumb-error">无图</div>
@@ -198,7 +202,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无商品" :image-size="72" />
+          <el-empty description="暂无商品" :image-size="72" class="app-empty" />
         </template>
       </el-table>
 
@@ -208,6 +212,7 @@ onMounted(() => {
           :page-size="size"
           :total="total"
           layout="total, prev, pager, next"
+          background
           @current-change="
             (value: number) => {
               page = value
@@ -231,49 +236,52 @@ onMounted(() => {
 
 <style scoped>
 .products-page {
-  min-height: 100%;
-  padding: 16px;
-  box-sizing: border-box;
-}
-
-.page-body {
-  padding: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
 }
 
 .filter-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--gap-3);
+  margin-bottom: var(--gap-4);
   flex-wrap: wrap;
 }
 
+.filter-select {
+  width: 180px;
+}
+
+.filter-bar .filter-select + .filter-select {
+  width: 140px;
+}
+
 .filter-hint {
-  font-size: 12px;
-  color: #909399;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .thumb {
   width: 56px;
   height: 56px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .thumb-error {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  color: #c0c4cc;
-  background: #fafafa;
+  width: 56px;
+  height: 56px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
 }
 
 .pager {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
+  margin-top: var(--gap-4);
 }
 </style>

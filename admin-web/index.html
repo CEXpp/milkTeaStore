@@ -3,7 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1b2233" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234b5bd6'/%3E%3Ctext x='16' y='22' font-size='18' font-family='PingFang SC,Microsoft YaHei,sans-serif' font-weight='700' text-anchor='middle' fill='%23fff'%3E奶%3C/text%3E%3C/svg%3E"
+    />
     <title>奶茶店商家后台</title>
+    <style>
+      /* 首屏底色与加载态：避免白屏闪烁（与登录页/侧栏深色同色系） */
+      html,
+      body {
+        margin: 0;
+        background: #1b2233;
+      }
+
+      #app:empty::after {
+        content: '';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 26px;
+        height: 26px;
+        margin: -13px 0 0 -13px;
+        border: 3px solid rgba(255, 255, 255, 0.25);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: app-boot-spin 0.8s linear infinite;
+      }
+
+      @keyframes app-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

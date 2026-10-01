@@ -244,31 +244,37 @@ async function submit(): Promise<void> {
 
 <style scoped>
 .unit {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #909399;
+  margin-left: var(--gap-2);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 .image-field {
   display: flex;
-  gap: 12px;
+  gap: var(--gap-3);
   align-items: flex-start;
 }
 
 .preview {
   width: 96px;
   height: 96px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  color: #c0c4cc;
-  background: #fafafa;
+  width: 96px;
+  height: 96px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  background: var(--bg-subtle);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
 }
 
 .preview-error {
@@ -276,15 +282,15 @@ async function submit(): Promise<void> {
   align-items: center;
   justify-content: center;
   height: 100%;
-  font-size: 12px;
-  color: #c0c4cc;
-  background: #fafafa;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  background: var(--bg-subtle);
 }
 
 .image-actions {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--gap-2);
   align-items: flex-start;
 }
 </style>

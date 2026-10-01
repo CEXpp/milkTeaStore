@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { getStatsOrders, type StatsOrderItem } from '@/api/stats'
 import type { OrderSource, OrderStatus } from '@/api/order'
+import { useMountOrActivateRefresh } from '@/composables/useMountOrActivateRefresh'
 
 /**
  * 按日订单流水明细（T35）：供商家逐笔对账，含待支付 / 超时关闭 / 作废等异常单，
@@ -30,14 +31,15 @@ const STATUS_OPTIONS: Array<{ label: string; value: OrderStatus | '' }> = [
 ]
 
 /** 状态 → 展示文案与标签色（异常单给醒目色，便于一眼扫到） */
-const STATUS_STYLE: Record<OrderStatus, { label: string; type: 'success' | 'warning' | 'info' | 'danger' | 'primary' }> = {
-  PENDING_PAYMENT: { label: '待支付', type: 'info' },
-  PAID: { label: '已支付', type: 'primary' },
-  PREPARING: { label: '制作中', type: 'warning' },
-  COMPLETED: { label: '已完成', type: 'success' },
-  CLOSED: { label: '超时关闭', type: 'info' },
-  VOIDED: { label: '已作废', type: 'danger' }
-}
+const STATUS_STYLE: Record<OrderStatus, { label: string; type: 'success' | 'warning' | 'info' | 'danger' | 'primary' }> =
+  {
+    PENDING_PAYMENT: { label: '待支付', type: 'info' },
+    PAID: { label: '已支付', type: 'primary' },
+    PREPARING: { label: '制作中', type: 'warning' },
+    COMPLETED: { label: '已完成', type: 'success' },
+    CLOSED: { label: '超时关闭', type: 'info' },
+    VOIDED: { label: '已作废', type: 'danger' }
+  }
 
 const SOURCE_LABEL: Record<OrderSource, string> = {
   MINI_PROGRAM: '小程序',
@@ -78,7 +80,8 @@ function reloadFromFirstPage(): void {
   page.value = 1
 }
 
-onMounted(load)
+// 统计页被 keep-alive 缓存，重新激活时也要重取一次，避免流水停留在上次数据
+useMountOrActivateRefresh(() => void load())
 watch(() => props.date, reloadFromFirstPage)
 watch(status, reloadFromFirstPage)
 watch(page, load)
@@ -127,7 +130,7 @@ watch(page, load)
         :total="total"
         layout="total, prev, pager, next"
         background
-        small
+        size="small"
       />
     </div>
   </el-card>
@@ -138,11 +141,13 @@ watch(page, load)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--gap-3);
 }
 
 .card-title {
+  font-size: var(--fs-h2);
   font-weight: 600;
+  color: var(--text-1);
 }
 
 .status-select {
@@ -152,6 +157,6 @@ watch(page, load)
 .flow-pager {
   display: flex;
   justify-content: flex-end;
-  margin-top: 12px;
+  margin-top: var(--gap-4);
 }
 </style>

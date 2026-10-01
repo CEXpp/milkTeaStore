@@ -1,0 +1,86 @@
+/**
+ * 设计 token（现代简约蓝灰 Modern Slate & Indigo）：
+ * 全局唯一的颜色 / 圆角 / 阴影 / 间距 / 字号 / 动效来源。
+ * 业务样式一律引用这里的变量，不再硬编码色值，便于整站统一调性。
+ */
+
+:root {
+  /* ===== 品牌主色（靛蓝 Indigo） ===== */
+  --brand-700: #2f3aa0;
+  --brand-600: #3b49b8;
+  --brand-500: #4b5bd6;
+  --brand-400: #5c6be0;
+  --brand-050: #eef1fb;
+
+  /* ===== 背景 ===== */
+  --bg-app: #f5f7fa;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f8fafc;
+  --bg-sidebar: #1b2233;
+  --bg-sidebar-hover: #232c42;
+  --bg-sidebar-active: #2a3550;
+
+  /* ===== 文本 ===== */
+  --text-1: #1f2937;
+  --text-2: #6b7280;
+  --text-3: #9ca3af;
+  --text-invert: #e5e9f0;
+
+  /* ===== 描边 ===== */
+  --border: #e5e9f0;
+  --border-strong: #d5dbe6;
+
+  /* ===== 功能色 ===== */
+  --c-success: #2fa36b;
+  --c-warning: #e0a33c;
+  --c-danger: #e0574f;
+  --c-info: #6b7280;
+
+  /* 功能色浅底（标签 / 提示条背景） */
+  --c-success-soft: #e9f7f0;
+  --c-warning-soft: #fdf6e8;
+  --c-danger-soft: #fdeeee;
+  --c-info-soft: #f1f2f6;
+  --c-brand-soft: var(--brand-050);
+
+  /* ===== 圆角 ===== */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  /* ===== 阴影（低饱和、多层柔光） ===== */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.05);
+  --shadow-hover: 0 4px 12px rgba(75, 91, 214, 0.12), 0 12px 28px rgba(16, 24, 40, 0.08);
+  --shadow-float: 0 18px 48px rgba(16, 24, 40, 0.18);
+
+  /* ===== 间距 ===== */
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 20px;
+  --gap-6: 24px;
+  --gap-8: 32px;
+
+  /* ===== 字号 ===== */
+  --fs-h1: 20px;
+  --fs-h2: 15px;
+  --fs-body: 14px;
+  --fs-sm: 13px;
+  --fs-xs: 12px;
+
+  /* ===== 布局尺寸 ===== */
+  --sidebar-w: 216px;
+  --sidebar-w-collapsed: 68px;
+  --topbar-h: 60px;
+  --content-pad: 20px;
+
+  /* ===== 动效（克制：120–200ms） ===== */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
