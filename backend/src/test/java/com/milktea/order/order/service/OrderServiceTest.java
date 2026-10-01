@@ -13,6 +13,7 @@ import com.milktea.order.order.dto.PricingResult;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderItem;
 import com.milktea.order.order.entity.OrderStatus;
+import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.mapper.OrderItemMapper;
 import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.vo.OrderCreateVo;
@@ -71,6 +72,12 @@ class OrderServiceTest {
     private ShopConfigMapper shopConfigMapper;
     @Mock
     private PaymentService paymentService;
+    /**
+     * T43 新增的实时事件发布器依赖：下单会调用 publishStatusChanged。
+     * Mockito 对缺失的构造参数注入 null，不给 mock 会在下单用例里 NPE，故必须显式声明。
+     */
+    @Mock
+    private OrderEventPublisher eventPublisher;
 
     @InjectMocks
     private OrderService orderService;

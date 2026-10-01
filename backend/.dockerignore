@@ -1,8 +1,13 @@
 # 不把这些送进构建上下文（上下文越小构建越快，也不会污染层缓存）
+#
+# 注意：mvnw / mvnw.cmd / .mvn/ 三者**不可排除**。
+#   backend/Dockerfile 构建阶段会 `COPY pom.xml mvnw ./` 与 `COPY .mvn .mvn`，
+#   而本仓库的 Maven Wrapper 是 distributionType=only-script（无 maven-wrapper.jar），
+#   必须靠 .mvn/wrapper/maven-wrapper.properties 在容器内下载 Maven 发行包——两者缺一不可。
+#   曾因排除它们导致 test-build.yml（Build and Push to GHCR）报：
+#     failed to calculate checksum ... "/mvnw": not found
+#     failed to calculate checksum ... "/.mvn": not found
 target/
 *.log
-mvnw
-mvnw.cmd
-.mvn/
 .idea/
 .vscode/
