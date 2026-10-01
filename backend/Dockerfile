@@ -1,52 +1,68 @@
-###############################################################################
-# 后端镜像：两阶段构建，全部使用你 ACR 里的基础镜像
-#   构建阶段：jujube/maven:3.9-eclipse-temurin-25-alpine（Maven 3.9 + JDK 25）
-#   运行阶段：jujube/eclipse-temurin:25-jre-alpine（仅 JRE 25，镜像小）
+# =====================================================================
+# backend/Dockerfile
+# 多阶段构建：JDK 25 编译打包 → 同版本 JDK 25 运行（含 curl 供健康检查）
 #
-# 构建（上下文必须是 backend 目录）：
-#   docker build -t <后端镜像名>:<tag> ./backend
-###############################################################################
+# 适用：milkTeaStore 后端（Spring Boot 4.1.1 / Java 25 / Maven）
+# 端口：8080（Spring Boot 默认，与 scripts/smoke.sh 默认探测一致）
+# 构建上下文：backend/ 目录（docker-compose 中以 ../backend 为 context）
+# 数据依赖：MySQL / MinIO 在远端服务器，由 application-dev.yml 指定，容器不内置
+# =====================================================================
 
-# ---------- 阶段 1：编译打包 ----------
-FROM crpi-0ocfwxlhi33l7izj.cn-guangzhou.personal.cr.aliyuncs.com/jujube/maven:3.9-eclipse-temurin-25-alpine AS build
-
+# ---------------------------------------------------------------------
+# 1) 构建阶段：用仓库自带的 Maven Wrapper（mvnw）完成依赖下载与打包，
+#    避免宿主机 Maven 版本与 JDK 25 不匹配。
+# ---------------------------------------------------------------------
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /build
 
-# 先把阿里云 Maven 源注入构建容器
-COPY settings.xml /root/.m2/settings.xml
+# 先拷入构建描述与 wrapper，预热依赖以命中缓存层；
+# 注意：COPY <dir> <dest> 是「拷目录内容、不拷目录名」，故 .mvn 必须显式指定同名目标，
+#       否则 wrapper 会落到 ./wrapper，mvnw 找不到 ./.mvn/wrapper/maven-wrapper.properties。
+COPY pom.xml mvnw ./
+COPY .mvn .mvn
+RUN chmod +x mvnw \
+    && ./mvnw -B -ntp -DskipTests dependency:go-offline || true
 
-# 先只拷 pom 下依赖：源码改动时不会重新下载全部依赖（层缓存）
-COPY pom.xml ./
-RUN mvn -B -ntp dependency:go-offline
-
-# 再拷源码并打包（测试由 CI 单独跑，构建镜像时跳过）
+# 再拷源码并打包；跳过测试（@SpringBootTest 需 MySQL 服务容器，见 CI）
 COPY src ./src
-RUN mvn -B -ntp package -DskipTests
+# 选出可执行 jar（排除 Spring Boot 重命名的 *.jar.original）
+RUN ./mvnw -B -ntp -DskipTests package \
+    && cp $(ls target/*.jar | grep -v '\.original$') /app.jar
 
-# ---------- 阶段 2：运行 ----------
-FROM crpi-0ocfwxlhi33l7izj.cn-guangzhou.personal.cr.aliyuncs.com/jujube/eclipse-temurin:25-jre-alpine
+# ---------------------------------------------------------------------
+# 2) 运行阶段
+# ---------------------------------------------------------------------
+FROM eclipse-temurin:25-jdk AS runtime
 
-# 时区与业务配置一致（订单号 / 取餐码按 Asia/Shanghai 计算自然日）
-ENV TZ=Asia/Shanghai
-
-# JVM 堆按容器内存限制自适应（默认用限制值的 75%）
-# 服务器只有 2 核 2G 时建议 docker run 加 -m 1g，可用 -e JAVA_OPTS="..." 追加参数
-ENV JAVA_OPTS=""
-
-# 非 root 运行
-RUN addgroup -S spring && adduser -S spring -G spring
-USER spring
+# 接收构建时传入的 git commit sha（供 OCI label 使用）
+ARG VCS_REF=unknown
 
 WORKDIR /app
-COPY --from=build /build/target/*.jar app.jar
 
-# 项目未配置 server.port，Spring Boot 默认 8080
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8
+
+# 仅装 curl 供 HEALTHCHECK 探测 /actuator/health（Ubuntu 基础镜像默认无 wget/curl）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /app.jar /app/app.jar
+
 EXPOSE 8080
 
-# 健康检查走 /actuator/health（含数据库连通性，数据库不可达会报 unhealthy）
-HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-    CMD wget -q --spider http://127.0.0.1:8080/actuator/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=10 \
+    CMD curl -f http://127.0.0.1:8080/actuator/health || exit 1
 
-# exec 让 java 接管 PID 1，能收到 SIGTERM 优雅停机
-# 不写死 profile：application.properties 里默认 dev，需要换配置时用 -e SPRING_PROFILES_ACTIVE=xxx 覆盖
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
+LABEL org.opencontainers.image.title="milkTeaStore Backend" \
+      org.opencontainers.image.description="奶茶点单系统后端服务（Spring Boot 4.1.1 / Java 25）" \
+      org.opencontainers.image.source="https://github.com/CEXpp/milkTeaStore" \
+      org.opencontainers.image.url="https://github.com/CEXpp/milkTeaStore" \
+      org.opencontainers.image.documentation="https://github.com/CEXpp/milkTeaStore/blob/main/README.md" \
+      org.opencontainers.image.license="MIT" \
+      org.opencontainers.image.authors="lurmou" \
+      org.opencontainers.image.vendor="milkTeaStore" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
