@@ -34,6 +34,11 @@ const sourceLabel = computed(() => SOURCE_LABELS[props.order.source] ?? props.or
 /** 到店握手标记（T49）：只有待制作卡片带这个信号；仅用于提示，不改变卡片顺序 */
 const arrived = computed(() => props.mode === 'pending' && (props.order as BoardPendingOrder).arrived === true)
 
+/** 到店预约标识（T51「我将到」）：仅待制作卡片有；该信号由后端纳入建议排序 */
+const etaMinutes = computed(() =>
+  props.mode === 'pending' ? (props.order as BoardPendingOrder).etaMinutes : null
+)
+
 const minutesText = computed(() => {
   if (props.mode === 'pending') {
     return `等待 ${(props.order as BoardPendingOrder).minutesWaiting} 分钟`
@@ -47,6 +52,10 @@ const minutesText = computed(() => {
     <div class="card-head">
       <span class="pickup-code">{{ order.pickupCode }}</span>
       <span class="head-tags">
+        <!-- 到店预约（T51）：顾客告知还有多久到店；该信号参与后端建议排序（到达近的优先） -->
+        <span v-if="etaMinutes !== null" class="eta-tag" title="顾客申报的预计到店时间">
+          约 {{ etaMinutes }} 分钟到
+        </span>
         <!-- 到店握手（T49）：顾客已在店等餐。仅提示——排序不变、统计不变，店长可优先处理也可无视 -->
         <span v-if="arrived" class="arrived-tag" title="顾客已申报到店">已到店</span>
         <span class="source-tag">{{ sourceLabel }}</span>
@@ -109,6 +118,16 @@ const minutesText = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--gap-2);
+}
+
+/* 到店预约标识（T51）：告知店长顾客还有多久到；该信号参与后端建议排序 */
+.eta-tag {
+  padding: 2px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--brand-600);
+  background: var(--brand-050);
+  border-radius: var(--radius-pill);
 }
 
 /* 到店握手标记（T49）：醒目提示顾客已在店等餐；不改变任何排序与统计口径 */

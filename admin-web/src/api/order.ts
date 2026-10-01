@@ -23,6 +23,8 @@ export interface BoardPendingOrder {
   totalAmount: string
   paidAt: string
   minutesWaiting: number
+  /** 顾客申报的预计到店时长（分钟，T51「我将到」）；未申报为 null。参与看板建议排序 */
+  etaMinutes: number | null
   /** 顾客是否已申报「我已到店」（T49 到店握手）；仅作提示，不改变排序 */
   arrived: boolean
   /** 申报到店时间；未申报为 null */

@@ -6,11 +6,13 @@ import com.milktea.order.common.jwt.AuthContext;
 import com.milktea.order.common.result.PageResult;
 import com.milktea.order.common.result.R;
 import com.milktea.order.order.dto.OrderCreateRequest;
+import com.milktea.order.order.dto.OrderEtaRequest;
 import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.service.ArrivalService;
 import com.milktea.order.order.service.OrderQueryService;
 import com.milktea.order.order.service.OrderService;
 import com.milktea.order.order.service.OrderTimelineService;
+import com.milktea.order.order.vo.ArrivalEtaVo;
 import com.milktea.order.order.vo.ArrivalVo;
 import com.milktea.order.order.vo.OrderCreateVo;
 import com.milktea.order.order.vo.OrderDetailVo;
@@ -136,6 +138,19 @@ public class CustomerOrderController {
     @PostMapping("/{id}/arrive")
     public R<ArrivalVo> arrive(@PathVariable("id") Long id) {
         return R.ok(arrivalService.arrive(id, currentCustomerId()));
+    }
+
+    /**
+     * 申报 / 修改 / 撤销「我到店还需 X 分钟」（T51，W02「我将到」）。
+     *
+     * <p>看板据此给出<b>建议制作顺序</b>（到达近的优先）；不申报时与既往「先付先做」逐字一致。
+     * 传 {@code etaMinutes=null} 即撤销。</p>
+     */
+    @PostMapping("/{id}/eta")
+    public R<ArrivalEtaVo> updateEta(@PathVariable("id") Long id,
+                                     @RequestBody(required = false) OrderEtaRequest request) {
+        Integer etaMinutes = request == null ? null : request.etaMinutes();
+        return R.ok(arrivalService.updateEta(id, currentCustomerId(), etaMinutes));
     }
 
     /**

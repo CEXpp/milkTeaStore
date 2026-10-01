@@ -6,6 +6,7 @@ import {
   getOrderDetail,
   getOrderStatus,
   getOrderTimeline,
+  updateOrderEta,
   type OrderDetail,
   type OrderTimeline
 } from '@/api/order'
@@ -49,9 +50,15 @@ const estimate = ref<QueueEstimate | null>(null)
 const orderTimeline = ref<OrderTimeline | null>(null)
 /** 已等待秒数（每秒刷新，用于「已等待 mm:ss」） */
 const waitedSeconds = ref(0)
+/** 「我到店还需」快捷项（T51）：与后端 ArrivalService.ALLOWED_ETA_MINUTES 一致 */
+const ETA_OPTIONS = [3, 5, 10]
+
 /** 到店申报时间（申报后展示，避免重复点击） */
 const arrivedAt = ref<string | null>(null)
 const arriveBusy = ref(false)
+/** 我申报的预计到店时长（T51，「我将到」）：3/5/10 或 null（未申报 / 已撤销） */
+const myEta = ref<number | null>(null)
+const etaBusy = ref(false)
 /** 秒级计时器（仅进行中订单需要） */
 let tickTimer: number | null = null
 
@@ -107,6 +114,7 @@ async function loadDetail(silent = false): Promise<void> {
     order.value = detail
     status.value = detail.status
     pickupCode.value = detail.pickupCode
+    myEta.value = detail.etaMinutes
   } catch {
     // 错误提示已由 request 层 toast 直显
   } finally {
@@ -291,6 +299,31 @@ async function markArrived(): Promise<void> {
   }
 }
 
+/**
+ * 申报 / 修改 / 撤销「我到店还需 X 分钟」（T51，W02「我将到」）。
+ *
+ * 与「我已到店」同属到店信号，但两者在看板上的待遇不同：本信号**参与**建议制作顺序
+ * （到达近的优先），而「我已到店」只打标识、不参与排序。传 null 即撤销。
+ */
+async function setEta(minutes: number | null): Promise<void> {
+  if (!orderId.value || etaBusy.value) {
+    return
+  }
+  etaBusy.value = true
+  try {
+    const result = await updateOrderEta(orderId.value, minutes)
+    myEta.value = result.etaMinutes
+    uni.showToast({
+      title: minutes === null ? '已撤销到店时间' : `已告知商家约 ${minutes} 分钟后到店`,
+      icon: 'none'
+    })
+  } catch {
+    // 错误提示已由 request 层 toast 直显（如 1001 时长不合法 / 1004 状态不可申报）
+  } finally {
+    etaBusy.value = false
+  }
+}
+
 /** 状态展示文案：PAID →「排队中第 N 位」、PREPARING →「制作中」、COMPLETED →「请取餐」 */
 const statusText = computed(() => statusLabel(status.value, seq.value))
 
@@ -424,6 +457,26 @@ function continuePay(): void {
         <view class="eta-note a11y-sm a11y-dim">
           预估随队列实时变化，区间用于表达不确定性，不做精确承诺
         </view>
+
+        <!-- 到店预约（T51，W02「我将到」）：只影响看板的建议制作顺序，不改变订单状态与统计 -->
+        <view class="eta-pick">
+          <text class="eta-key a11y-sm a11y-dim">我到店还需</text>
+          <view class="eta-chips">
+            <view
+              v-for="option in ETA_OPTIONS"
+              :key="option"
+              class="eta-chip a11y-sm"
+              :class="{ 'eta-chip-active': myEta === option }"
+              @click="setEta(option)"
+            >
+              {{ option }} 分钟
+            </view>
+            <view v-if="myEta !== null" class="eta-chip eta-chip-clear a11y-sm" @click="setEta(null)">
+              撤销
+            </view>
+          </view>
+        </view>
+
         <view class="arrive-btn a11y-md" :class="{ 'arrive-btn-done': !!arrivedAt }" @click="markArrived">
           {{ arrivedAt ? '已告知商家你已到店' : arriveBusy ? '提交中…' : '我已到店' }}
         </view>
@@ -546,6 +599,37 @@ function continuePay(): void {
   margin-top: 10rpx;
   line-height: 1.6;
   color: #909399;
+}
+
+/* 到店预约快捷项（T51）：3 / 5 / 10 分钟，可改可撤 */
+.eta-pick {
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f0f2f5;
+}
+
+.eta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.eta-chip {
+  padding: 10rpx 26rpx;
+  color: #409eff;
+  background: #ecf5ff;
+  border-radius: 999rpx;
+}
+
+.eta-chip-active {
+  color: #fff;
+  background: #409eff;
+}
+
+.eta-chip-clear {
+  color: #909399;
+  background: #f4f4f5;
 }
 
 .arrive-btn {

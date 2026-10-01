@@ -31,6 +31,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -79,9 +80,10 @@ public class AdminOrderService {
         LocalDateTime now = LocalDateTime.now();
 
         List<Order> pendingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getStatus, OrderStatus.PAID.name())
-                .orderByAsc(Order::getPaidAt)
-                .orderByAsc(Order::getId));
+                .eq(Order::getStatus, OrderStatus.PAID.name()));
+        // 排序改到内存（T51）：规则含「已申报到店时间优先」，用 Comparator 比拼 SQL 直观；
+        // 单店量级下内存排序没有性能压力。未申报时退化为「先付先做」，与 LLD 3.5 逐字一致。
+        pendingOrders.sort(pendingComparator());
         List<Order> preparingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, OrderStatus.PREPARING.name())
                 .orderByAsc(Order::getStartedAt)
@@ -118,6 +120,28 @@ public class AdminOrderService {
                 .collect(Collectors.toList()));
         board.setToday(buildToday(todayOrders, todayVoided, itemMap));
         return board;
+    }
+
+    /**
+     * 待制作分区的建议排序（T51，W02「我将到」）。
+     *
+     * <pre>
+     *   1) 已申报预计到店时长的在前，并按「到达临近度」升序（3 &lt; 5 &lt; 10 分钟）
+     *   2) 未申报的一律按 paid_at 升序、id 升序 —— 即 LLD 3.5 的「先付先做」
+     * </pre>
+     *
+     * <p>这是<b>建议顺序</b>而非强制：店长完全可以不理会（任务卡「只给建议顺序，不强制」）。
+     * 关键在于「不申报时与现状一致」——所有订单的 etaMinutes 均为 null 时，本比较器退化为
+     * 纯粹的 paid_at + id 排序，与改动前逐字相同（T51 验收项）。</p>
+     *
+     * <p>注意 {@code arrivedAt}（「我已到店」）<b>不</b>参与本排序——那是 T49 的验收要求。</p>
+     */
+    private Comparator<Order> pendingComparator() {
+        return Comparator
+                .comparingInt((Order order) -> order.getEtaMinutes() == null ? 1 : 0)
+                .thenComparing(Order::getEtaMinutes, Comparator.nullsLast(Comparator.<Integer>naturalOrder()))
+                .thenComparing(Order::getPaidAt, Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder()))
+                .thenComparing(Order::getId);
     }
 
     /**
@@ -221,7 +245,9 @@ public class AdminOrderService {
         card.setTotalAmount(MoneyUtils.format(order.getTotalAmount()));
         card.setPaidAt(format(order.getPaidAt()));
         card.setMinutesWaiting(Math.max(minutes, 0));
-        // 到店握手信号（T49）：只打标记——排序仍是 LLD 3.5 的「先付先做」，一成不变
+        // 到店预约（T51）：「我将到」参与建议排序，故随卡片一并下发给前端展示标识
+        card.setEtaMinutes(order.getEtaMinutes());
+        // 到店握手（T49）：「我已到店」只打标记，不参与排序（验收项「不强制改排序」）
         card.setArrived(order.getArrivedAt() != null);
         card.setArrivedAt(format(order.getArrivedAt()));
         return card;

@@ -91,6 +91,8 @@ export interface OrderDetail {
   closedAt: string | null
   voidedAt: string | null
   voidReason: string | null
+  /** 顾客申报的预计到店时长（分钟，T51「我将到」）；未申报为 null */
+  etaMinutes: number | null
   items: OrderDetailItem[]
 }
 
@@ -137,6 +139,28 @@ export function arriveOrder(orderId: number): Promise<OrderArrivalResult> {
   return request<OrderArrivalResult>({
     url: `/api/customer/orders/${orderId}/arrive`,
     method: 'POST',
+    auth: true
+  })
+}
+
+/** POST /api/customer/orders/{id}/eta 响应 data（T51 到店预约） */
+export interface OrderEtaResult {
+  orderId: number
+  /** 生效的预计到店时长（分钟）；撤销后为 null */
+  etaMinutes: number | null
+}
+
+/**
+ * 申报 / 修改 / 撤销「我到店还需 X 分钟」（T51，W02「我将到」）。
+ *
+ * 看板据此给出**建议制作顺序**（到达近的优先）；不申报时与既往「先付先做」逐字一致。
+ * 传 `null` 即撤销。仅 PAID / PREPARING 可申报，时长仅支持 3 / 5 / 10。
+ */
+export function updateOrderEta(orderId: number, etaMinutes: number | null): Promise<OrderEtaResult> {
+  return request<OrderEtaResult>({
+    url: `/api/customer/orders/${orderId}/eta`,
+    method: 'POST',
+    data: { etaMinutes },
     auth: true
   })
 }

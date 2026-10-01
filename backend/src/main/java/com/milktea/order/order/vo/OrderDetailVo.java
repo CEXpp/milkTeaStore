@@ -47,6 +47,9 @@ public class OrderDetailVo implements Serializable {
     /** 作废原因（商家填写，未作废为 null）。 */
     private String voidReason;
 
+    /** 顾客申报的预计到店时长（分钟，T51「我将到」：3 / 5 / 10）；未申报为 null。 */
+    private Integer etaMinutes;
+
     /** 订单项明细（含规格快照）。 */
     private List<OrderDetailItemVo> items;
 }
