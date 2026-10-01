@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
-import { getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import { arriveOrder, getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import { getQueueEstimate, type QueueEstimate } from '@/api/queue'
 import {
   subscribeOrderEvents,
   type OrderEventSubscription,
@@ -35,6 +36,16 @@ const pickupCode = ref<string | null>(null)
 const seq = ref<number | null>(null)
 const loading = ref(true)
 
+/** 队列预估（T49）：来自 T46 内核的真实队列聚合，前端不做本地估算 */
+const estimate = ref<QueueEstimate | null>(null)
+/** 已等待秒数（每秒刷新，用于「已等待 mm:ss」） */
+const waitedSeconds = ref(0)
+/** 到店申报时间（申报后展示，避免重复点击） */
+const arrivedAt = ref<string | null>(null)
+const arriveBusy = ref(false)
+/** 秒级计时器（仅进行中订单需要） */
+let tickTimer: number | null = null
+
 let pollTimer: number | null = null
 /** SSE 订阅句柄（T43）；为 null 表示当前走轮询回落通道 */
 let subscription: OrderEventSubscription | null = null
@@ -52,15 +63,25 @@ onShow(() => {
     return
   }
   void start()
+  startTick()
 })
 
-onHide(() => closeRealtime())
-onUnload(() => closeRealtime())
+onHide(() => {
+  closeRealtime()
+  stopTick()
+})
 
-/** 进入页面：拉详情 + 首次状态，随后按需启动实时通道 */
+onUnload(() => {
+  closeRealtime()
+  stopTick()
+})
+
+/** 进入页面：拉详情 + 首次状态 + 队列预估，随后按需启动实时通道 */
 async function start(): Promise<void> {
   await loadDetail()
   await poll()
+  await loadEstimate()
+  refreshWaited()
   if (isActiveStatus(status.value)) {
     startRealtime()
   }
@@ -110,6 +131,9 @@ async function applyStatus(
   }
   if (previous !== status.value) {
     await loadDetail(true)
+    // 状态变了，队列位置与预计等待也随之变化（T49）；失败静默，不影响主状态展示
+    void loadEstimate()
+    refreshWaited()
   }
   // 双信道提醒（T45）：刚刚进入「请取餐」时追加震动信道（仅无障碍模式；订阅消息由 T44 后端推送）。
   // 判定「刚刚进入」而非「当前是 COMPLETED」，避免每次重进页面都震一次。
@@ -178,12 +202,106 @@ function stopPolling(): void {
   }
 }
 
+/** 队列预估（T49）：失败静默——预估只是预期管理，缺失也不影响订单状态展示。 */
+async function loadEstimate(): Promise<void> {
+  if (!orderId.value) {
+    return
+  }
+  try {
+    estimate.value = await getQueueEstimate(orderId.value)
+  } catch {
+    estimate.value = null
+  }
+}
+
+/** 已等待时长（从支付时刻起算）；非队列内订单归零。 */
+function refreshWaited(): void {
+  const startAt = parseDateTime(order.value?.paidAt ?? null)
+  waitedSeconds.value = startAt === null ? 0 : Math.max(0, Math.floor((Date.now() - startAt) / 1000))
+}
+
+/**
+ * 解析后端时间串（yyyy-MM-dd HH:mm:ss）。
+ * 注意：iOS 的 Date.parse 不接受「空格分隔」的格式，须替换为 ISO 的 'T'。
+ */
+function parseDateTime(text: string | null): number | null {
+  if (!text) {
+    return null
+  }
+  const parsed = Date.parse(text.replace(' ', 'T'))
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function startTick(): void {
+  if (tickTimer !== null) {
+    return
+  }
+  tickTimer = setInterval(refreshWaited, 1000) as unknown as number
+}
+
+function stopTick(): void {
+  if (tickTimer !== null) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+}
+
+/**
+ * 申报「我已到店」（T49 到店握手）。
+ *
+ * 只写一个信号：看板据此给卡片打「已到店」标记，**不改变队列排序**（验收项「不强制改排序」），
+ * 店长可据此优先处理、也可完全无视。重复申报幂等，不报错。
+ */
+async function markArrived(): Promise<void> {
+  if (!orderId.value || arriveBusy.value || arrivedAt.value) {
+    return
+  }
+  arriveBusy.value = true
+  try {
+    const result = await arriveOrder(orderId.value)
+    arrivedAt.value = result.arrivedAt
+    uni.showToast({ title: '已告知商家你已到店', icon: 'none' })
+  } catch {
+    // 错误提示已由 request 层 toast 直显（如 1004 当前状态不可申报）
+  } finally {
+    arriveBusy.value = false
+  }
+}
+
 /** 状态展示文案：PAID →「排队中第 N 位」、PREPARING →「制作中」、COMPLETED →「请取餐」 */
 const statusText = computed(() => statusLabel(status.value, seq.value))
 
 const badgeType = computed(() => STATUS_TYPE[status.value] ?? 'info')
 
 const active = computed(() => isActiveStatus(status.value))
+
+/** 可申报到店的状态（与后端 ArrivalService.ARRIVABLE_STATUSES 一致） */
+const arrivable = computed(() => status.value === 'PAID' || status.value === 'PREPARING')
+
+/** 已等待 mm:ss（秒级刷新） */
+const waitedText = computed(() => {
+  const mm = Math.floor(waitedSeconds.value / 60)
+  const ss = waitedSeconds.value % 60
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+})
+
+/** 预计还需区间：诚实标注不确定性，不做精确承诺（W19）；不在队列中时不展示 */
+const estimateText = computed(() => {
+  const current = estimate.value
+  if (!current || current.position === 0) {
+    return ''
+  }
+  return `${current.etaLow}–${current.etaHigh} 分钟`
+})
+
+/** 队列位置（1 起；null 与 0 均不展示） */
+const positionText = computed(() => {
+  const current = estimate.value
+  if (!current || !current.position) {
+    return ''
+  }
+  return `第 ${current.position} 位`
+})
 
 /** 时间线：下单 → 支付 → 制作 → 出餐（未发生的事件显示为 pending） */
 const timeline = computed(() => {
@@ -241,6 +359,29 @@ function continuePay(): void {
         <view class="code-status a11y-lg" :class="`status-${badgeType}`">{{ statusText }}</view>
         <view v-if="active" class="code-tip a11y-sm a11y-dim">制作进度实时同步（连接异常时自动切换为轮询）</view>
         <view v-else-if="terminalTip" class="code-tip a11y-sm a11y-dim">{{ terminalTip }}</view>
+      </view>
+
+      <!-- 等待预估与到店握手（T49，W19）：诚实标注波动区间 + 「我已到店」信号 -->
+      <view v-if="arrivable" class="card">
+        <view class="card-title a11y-md">等待预估</view>
+        <view class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">已等待</text>
+          <text class="eta-val a11y-md">{{ waitedText }}</text>
+        </view>
+        <view v-if="positionText" class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">队列位置</text>
+          <text class="eta-val a11y-md">{{ positionText }}</text>
+        </view>
+        <view v-if="estimateText" class="eta-line">
+          <text class="eta-key a11y-sm a11y-dim">预计还需</text>
+          <text class="eta-val a11y-md">{{ estimateText }}</text>
+        </view>
+        <view class="eta-note a11y-sm a11y-dim">
+          预估随队列实时变化，区间用于表达不确定性，不做精确承诺
+        </view>
+        <view class="arrive-btn a11y-md" :class="{ 'arrive-btn-done': !!arrivedAt }" @click="markArrived">
+          {{ arrivedAt ? '已告知商家你已到店' : arriveBusy ? '提交中…' : '我已到店' }}
+        </view>
       </view>
 
       <view class="card">
@@ -326,6 +467,44 @@ function continuePay(): void {
 .a11y-pickup-tip {
   font-size: 28rpx;
   color: #ffffff;
+}
+
+/* 等待预估与到店握手（T49）：只读展示 + 一个可选的人工信号 */
+.eta-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+
+.eta-key {
+  color: #909399;
+}
+
+.eta-val {
+  font-weight: 600;
+}
+
+.eta-note {
+  margin-top: 10rpx;
+  line-height: 1.6;
+  color: #909399;
+}
+
+.arrive-btn {
+  margin-top: 24rpx;
+  height: 84rpx;
+  line-height: 84rpx;
+  font-size: 30rpx;
+  text-align: center;
+  color: #fff;
+  background: #409eff;
+  border-radius: 999rpx;
+}
+
+.arrive-btn-done {
+  color: #268356;
+  background: #e9f7f0;
 }
 
 .code-card {

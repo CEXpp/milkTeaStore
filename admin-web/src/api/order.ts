@@ -23,6 +23,10 @@ export interface BoardPendingOrder {
   totalAmount: string
   paidAt: string
   minutesWaiting: number
+  /** 顾客是否已申报「我已到店」（T49 到店握手）；仅作提示，不改变排序 */
+  arrived: boolean
+  /** 申报到店时间；未申报为 null */
+  arrivedAt: string | null
 }
 
 /** 看板「制作中」卡片（GET /api/admin/orders/board → preparing[]，按开始时间正序） */
