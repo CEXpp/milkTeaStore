@@ -54,10 +54,12 @@ public class CustomerSubscribeController {
      */
     @GetMapping("/templates")
     public R<List<SubscribeTemplateVo>> templates() {
-        List<SubscribeTemplateVo> list = new ArrayList<>(2);
+        List<SubscribeTemplateVo> list = new ArrayList<>(3);
         if (properties.active()) {
             collect(list, WxSubscribeProperties.KEY_PREPARING);
             collect(list, WxSubscribeProperties.KEY_PICKUP);
+            // T47：结算页「稍后提醒我再点」需要在同一处拿到模板 ID（前端点击时才能同步发起授权）
+            collect(list, WxSubscribeProperties.KEY_REMIND);
         }
         return R.ok(list);
     }

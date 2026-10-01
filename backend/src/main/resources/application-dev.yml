@@ -72,6 +72,11 @@ wx:
       status-key: thing1
       pickup-code-key: character_string2
       time-key: time3
+    # 稍后提醒我再点（T47，结算页下单前预期管理）：无订单上下文，故不需要取餐码变量
+    remind:
+      template-id: "${WX_TMPL_REMIND:}"
+      status-key: thing1
+      time-key: time3
 # JWT（T06）：HS256 密钥，长度须 ≥ 32 字节；真实密钥放 backend/.env（JWT_SECRET），默认值仅为本地占位
 jwt:
   secret: "${JWT_SECRET:dev-only-insecure-jwt-secret-please-change-me-0123456789abcdef}"
@@ -95,6 +100,8 @@ app:
 # 订单（T10）：支付期限（分钟），下单响应 expireAt = createdAt + 该值（LLD 3.3 / 4.2）
 order:
   payment-timeout-minutes: 15
+  # 稍后提醒（T47）：结算页「稍后提醒我再点」的默认延迟（分钟）；请求可指定，服务端上限 60
+  remind-delay-minutes: ${ORDER_REMIND_DELAY_MINUTES:15}
 # 队列预估内核（T46，LLD 11.6）：下列为默认值，可被 shop_config（KV 表）按运行期覆盖——
 # 覆盖键为 queue.prep-minutes / queue.staff / queue.volatility（见 QueueEstimateService）；
 # buffer-minutes 按 LLD 定位为「常量安全垫」，不开放运行期覆盖。

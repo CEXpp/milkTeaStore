@@ -19,6 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param miniprogramState 跳转的小程序版本：developer / trial / formal（缺省 developer）
  * @param preparing        制作开始模板（PREPARING）
  * @param pickup           取餐提醒模板（COMPLETED，由 PICKUP_READY 事件触发）
+ * @param remind           「稍后提醒我再点」模板（T47 下单前预期管理，由 {@code RemindTaskJob} 定时触发）
  */
 @ConfigurationProperties(prefix = "wx.subscribe")
 public record WxSubscribeProperties(
@@ -26,13 +27,17 @@ public record WxSubscribeProperties(
         String page,
         String miniprogramState,
         Template preparing,
-        Template pickup) {
+        Template pickup,
+        Template remind) {
 
     /** 业务模板键：制作开始。 */
     public static final String KEY_PREPARING = "PREPARING";
 
     /** 业务模板键：取餐提醒。 */
     public static final String KEY_PICKUP = "PICKUP";
+
+    /** 业务模板键：稍后提醒我再点（T47）。 */
+    public static final String KEY_REMIND = "REMIND";
 
     /** 默认跳转页（取餐码页，LLD 3.6 进行中订单页）。 */
     public static final String DEFAULT_PAGE = "pages/order-detail/index";
@@ -64,6 +69,7 @@ public record WxSubscribeProperties(
                 ? DEFAULT_MINIPROGRAM_STATE : miniprogramState.trim();
         preparing = (preparing == null) ? new Template(null, null, null, null) : preparing;
         pickup = (pickup == null) ? new Template(null, null, null, null) : pickup;
+        remind = (remind == null) ? new Template(null, null, null, null) : remind;
     }
 
     /** 总开关是否打开。 */
@@ -74,7 +80,7 @@ public record WxSubscribeProperties(
     /**
      * 按业务键取模板；未知键返回 {@code null}。
      *
-     * @param templateKey {@link #KEY_PREPARING} / {@link #KEY_PICKUP}
+     * @param templateKey {@link #KEY_PREPARING} / {@link #KEY_PICKUP} / {@link #KEY_REMIND}
      */
     public Template templateFor(String templateKey) {
         if (KEY_PREPARING.equals(templateKey)) {
@@ -83,11 +89,16 @@ public record WxSubscribeProperties(
         if (KEY_PICKUP.equals(templateKey)) {
             return pickup;
         }
+        if (KEY_REMIND.equals(templateKey)) {
+            return remind;
+        }
         return null;
     }
 
     /** 业务键是否合法（供订阅登记接口校验，避免脏数据落库）。 */
     public static boolean isKnownKey(String templateKey) {
-        return KEY_PREPARING.equals(templateKey) || KEY_PICKUP.equals(templateKey);
+        return KEY_PREPARING.equals(templateKey)
+                || KEY_PICKUP.equals(templateKey)
+                || KEY_REMIND.equals(templateKey);
     }
 }

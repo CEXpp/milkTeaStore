@@ -149,37 +149,68 @@ public class WxSubscribeMessageService implements OrderEventListener {
             // 柜台单无归属顾客，无 openid 可推
             return;
         }
-        Customer customer = customerMapper.selectById(order.getCustomerId());
-        if (customer == null || !StringUtils.hasText(customer.getOpenid())) {
-            log.warn("[T44] 顾客或 openid 缺失，跳过订阅消息 customerId={}", order.getCustomerId());
-            return;
-        }
-
         Map<String, Object> data = buildData(template, templateKey, order);
         if (data.isEmpty()) {
             log.warn("[T44] 模板变量未配置任何取值字段，跳过下发 templateKey={}（微信会返回 47003 参数错误）", templateKey);
             return;
         }
+        deliver(order.getCustomerId(), templateKey, data, pageFor(order.getId()), "orderId=" + order.getId());
+    }
 
-        LocalDateTime now = LocalDateTime.now();
+    /**
+     * 通用下发出口（T44 订阅消息的唯一落地路径）。
+     *
+     * <p>T47「稍后提醒我再点」不是订单事件驱动的（它发生在下单之前、没有订单），
+     * 因此不能走 {@link #onOrderEvent}；但它需要的「占额度 → 取 token → POST → 失败退额度」
+     * 与订单推送完全一致，故抽成本方法复用，避免两套下发逻辑各自演化导致口径分叉。</p>
+     *
+     * @param customerId  目标顾客
+     * @param templateKey 业务模板键
+     * @param data        模板数据（变量名 → {value}）
+     * @param page        点击跳转页
+     * @param trace       日志上下文（如 {@code "orderId=3001"} / {@code "remindTaskId=7"}）
+     * @return {@code true} = 微信已受理（errcode=0）；{@code false} = 未下发（未启用 / 无模板 /
+     *         无额度 / 网络或微信拒绝）——一律不抛异常
+     */
+    public boolean deliver(Long customerId, String templateKey, Map<String, Object> data,
+                           String page, String trace) {
+        if (!properties.active()) {
+            log.debug("[T44] 订阅消息未启用，跳过下发 templateKey={} {}", templateKey, trace);
+            return false;
+        }
+        WxSubscribeProperties.Template template = properties.templateFor(templateKey);
+        if (template == null || !template.usable()) {
+            log.debug("[T44] 模板未配置，跳过下发 templateKey={} {}", templateKey, trace);
+            return false;
+        }
+        if (data == null || data.isEmpty()) {
+            log.warn("[T44] 模板变量为空，跳过下发 templateKey={}（微信会返回 47003 参数错误）{}", templateKey, trace);
+            return false;
+        }
+        Customer customer = customerMapper.selectById(customerId);
+        if (customer == null || !StringUtils.hasText(customer.getOpenid())) {
+            log.warn("[T44] 顾客或 openid 缺失，跳过下发 customerId={} {}", customerId, trace);
+            return false;
+        }
+
         // 原子占用额度：0 表示用户未授权或次数已用完（微信侧即 43101 的成因），静默跳过
-        if (quotaMapper.consume(order.getCustomerId(), templateKey, now) == 0) {
-            log.info("[T44] 无可用订阅额度，跳过下发（用户未授权或已用完）customerId={} templateKey={} orderId={}",
-                    order.getCustomerId(), templateKey, order.getId());
-            return;
+        if (quotaMapper.consume(customerId, templateKey, LocalDateTime.now()) == 0) {
+            log.info("[T44] 无可用订阅额度，跳过下发（用户未授权或已用完）customerId={} templateKey={} {}",
+                    customerId, templateKey, trace);
+            return false;
         }
 
         String accessToken = accessTokenService.get();
         if (!StringUtils.hasText(accessToken)) {
-            quotaMapper.refund(order.getCustomerId(), templateKey, LocalDateTime.now());
-            log.warn("[T44] access_token 不可用，已退还额度 templateKey={} orderId={}", templateKey, order.getId());
-            return;
+            quotaMapper.refund(customerId, templateKey, LocalDateTime.now());
+            log.warn("[T44] access_token 不可用，已退还额度 templateKey={} {}", templateKey, trace);
+            return false;
         }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("touser", customer.getOpenid());
         body.put("template_id", template.templateId());
-        body.put("page", pageFor(order.getId()));
+        body.put("page", page);
         body.put("miniprogram_state", properties.miniprogramState());
         body.put("lang", LANG_ZH_CN);
         body.put("data", data);
@@ -192,21 +223,20 @@ public class WxSubscribeMessageService implements OrderEventListener {
                     .retrieve()
                     .body(SendResp.class);
         } catch (Exception e) {
-            quotaMapper.refund(order.getCustomerId(), templateKey, LocalDateTime.now());
-            log.warn("[T44] 订阅消息下发请求失败，已退还额度 templateKey={} orderId={}：{}",
-                    templateKey, order.getId(), e.getMessage());
-            return;
+            quotaMapper.refund(customerId, templateKey, LocalDateTime.now());
+            log.warn("[T44] 订阅消息下发请求失败，已退还额度 templateKey={} {}：{}", templateKey, trace, e.getMessage());
+            return false;
         }
 
         Integer errcode = resp == null ? null : resp.getErrcode();
         if (errcode != null && errcode != 0) {
-            quotaMapper.refund(order.getCustomerId(), templateKey, LocalDateTime.now());
-            log.warn("[T44] 订阅消息下发被微信拒绝，已退还额度 errcode={} errmsg={} templateKey={} orderId={}",
-                    errcode, resp.getErrmsg(), templateKey, order.getId());
-            return;
+            quotaMapper.refund(customerId, templateKey, LocalDateTime.now());
+            log.warn("[T44] 订阅消息下发被微信拒绝，已退还额度 errcode={} errmsg={} templateKey={} {}",
+                    errcode, resp.getErrmsg(), templateKey, trace);
+            return false;
         }
-        log.info("[T44] 订阅消息已下发 templateKey={} orderId={} customerId={}",
-                templateKey, order.getId(), order.getCustomerId());
+        log.info("[T44] 订阅消息已下发 templateKey={} customerId={} {}", templateKey, customerId, trace);
+        return true;
     }
 
     /**
