@@ -4,6 +4,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { getOrderDetail, payOrder, type OrderDetail } from '@/api/order'
 import { getSubscribeTemplates, reportSubscribe, type SubscribeTemplate } from '@/api/subscribe'
 import { useCartStore } from '@/stores/cart'
+import { useA11yStore } from '@/stores/a11y'
 import { ApiError } from '@/utils/request'
 import { formatCents } from '@/utils/money'
 import { fromCompactDateTime } from '@/utils/datetime'
@@ -23,6 +24,7 @@ import { requestSubscribeQuota } from '@/utils/wx-subscribe'
  */
 
 const cart = useCartStore()
+const a11y = useA11yStore()
 
 const orderId = ref<number | null>(null)
 /** 支付截止时间（下单响应带回，14 位纯数字透传，详情接口不含该字段） */
@@ -143,14 +145,14 @@ function cancel(): void {
 </script>
 
 <template>
-  <view class="pay-page">
+  <view class="pay-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="loading" class="page-tip">订单加载中…</view>
 
     <template v-else-if="order">
       <view class="amount-card">
-        <view class="amount-label">应付金额</view>
-        <view class="amount-value">￥{{ order.totalAmount }}</view>
-        <view class="amount-order">订单号 {{ order.orderNo }}</view>
+        <view class="amount-label a11y-md a11y-dim">应付金额</view>
+        <view class="amount-value a11y-lg">￥{{ order.totalAmount }}</view>
+        <view class="amount-order a11y-sm a11y-dim">订单号 {{ order.orderNo }}</view>
         <view v-if="expireAt" class="amount-expire">请于 {{ expireAt }} 前完成支付（超时自动关单）</view>
       </view>
 

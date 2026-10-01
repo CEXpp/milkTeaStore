@@ -8,18 +8,25 @@ import {
   type OrderStatusEvent
 } from '@/utils/order-events'
 import { isActiveStatus, isTerminalStatus, statusLabel, STATUS_TYPE } from '@/utils/order-status'
+import { useA11yStore } from '@/stores/a11y'
+import { vibratePickupReady } from '@/utils/pickup-remind'
 
 /**
- * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1）：
+ * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1 / T45 11.4）：
  * - 大号取餐码 + 状态时间线（下单 / 支付 / 制作 / 出餐，未发生的事件置灰）；
  * - 实时通道（T43）：优先订阅 SSE `/api/customer/orders/events?orderId=`，收到事件立即应用载荷并
  *   补拉一次轻量状态（补齐 seq），出口与轮询一致；SSE 不可用时回落 3 秒轮询 `/{id}/status`，二者互斥；
  * - 连接建立时后端会补发一条当前状态快照，重连后自动对齐服务端真值；
  * - COMPLETED / CLOSED / VOIDED 为终态：关闭实时通道并展示终态文案（COMPLETED → 请取餐）；
- * - 页面切后台（onHide）关闭实时通道省流量，切回（onShow）立即刷新一次并重新建连。
+ * - 页面切后台（onHide）关闭实时通道省流量，切回（onShow）立即刷新一次并重新建连；
+ * - 无障碍（T45，LLD 11.4「双信道取餐提醒」）：开启后进入 COMPLETED 时追加**震动**信道，
+ *   并把取餐码与状态放大加黑；视觉/触觉/微信订阅消息三信道同源（都由 PICKUP_READY 驱动），
+ *   呈现层分叉而业务契约不变。
  */
 
 const POLL_INTERVAL_MS = 3000
+
+const a11y = useA11yStore()
 
 const orderId = ref<number | null>(null)
 const order = ref<OrderDetail | null>(null)
@@ -103,6 +110,11 @@ async function applyStatus(
   }
   if (previous !== status.value) {
     await loadDetail(true)
+  }
+  // 双信道提醒（T45）：刚刚进入「请取餐」时追加震动信道（仅无障碍模式；订阅消息由 T44 后端推送）。
+  // 判定「刚刚进入」而非「当前是 COMPLETED」，避免每次重进页面都震一次。
+  if (a11y.enabled && status.value === 'COMPLETED' && previous !== 'COMPLETED') {
+    vibratePickupReady()
   }
   if (isTerminalStatus(status.value)) {
     closeRealtime()
@@ -212,47 +224,54 @@ function continuePay(): void {
 </script>
 
 <template>
-  <view class="detail-page">
+  <view class="detail-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="loading" class="page-tip">订单加载中…</view>
 
     <template v-else-if="order">
+      <!-- 无障碍取餐提醒横幅（T45 视觉信道）：与震动、微信订阅消息同源，均由 COMPLETED 触发 -->
+      <view v-if="a11y.enabled && status === 'COMPLETED'" class="a11y-pickup-banner">
+        <text class="a11y-pickup-title">请到柜台取餐</text>
+        <text class="a11y-pickup-code">{{ pickupCode ?? '--' }}</text>
+        <text class="a11y-pickup-tip">已同时以手机震动与微信消息提醒</text>
+      </view>
+
       <view class="code-card">
-        <view class="code-label">取餐码</view>
-        <view class="code-value">{{ pickupCode ?? '--' }}</view>
-        <view class="code-status" :class="`status-${badgeType}`">{{ statusText }}</view>
-        <view v-if="active" class="code-tip">制作进度实时同步（连接异常时自动切换为轮询）</view>
-        <view v-else-if="terminalTip" class="code-tip">{{ terminalTip }}</view>
+        <view class="code-label a11y-md a11y-dim">取餐码</view>
+        <view class="code-value a11y-code">{{ pickupCode ?? '--' }}</view>
+        <view class="code-status a11y-lg" :class="`status-${badgeType}`">{{ statusText }}</view>
+        <view v-if="active" class="code-tip a11y-sm a11y-dim">制作进度实时同步（连接异常时自动切换为轮询）</view>
+        <view v-else-if="terminalTip" class="code-tip a11y-sm a11y-dim">{{ terminalTip }}</view>
       </view>
 
       <view class="card">
-        <view class="card-title">订单状态</view>
+        <view class="card-title a11y-md">订单状态</view>
         <view v-for="(node, index) in timeline" :key="index" class="timeline-node">
           <view class="node-dot" :class="{ 'node-dot-done': node.done }"></view>
           <view class="node-body">
-            <view class="node-label" :class="{ 'node-label-active': node.done }">{{ node.label }}</view>
-            <view class="node-time">{{ node.time ?? '—' }}</view>
+            <view class="node-label a11y-md" :class="{ 'node-label-active': node.done }">{{ node.label }}</view>
+            <view class="node-time a11y-sm a11y-dim">{{ node.time ?? '—' }}</view>
           </view>
         </view>
       </view>
 
       <view class="card">
-        <view class="card-title">订单信息</view>
-        <view class="info-line"><text class="info-label">订单号</text><text>{{ order.orderNo }}</text></view>
-        <view class="info-line"><text class="info-label">下单时间</text><text>{{ order.createdAt }}</text></view>
-        <view v-if="order.remark" class="info-line"><text class="info-label">备注</text><text>{{ order.remark }}</text></view>
-        <view class="info-line">
-          <text class="info-label">实付金额</text>
+        <view class="card-title a11y-md">订单信息</view>
+        <view class="info-line a11y-md"><text class="info-label a11y-dim">订单号</text><text>{{ order.orderNo }}</text></view>
+        <view class="info-line a11y-md"><text class="info-label a11y-dim">下单时间</text><text>{{ order.createdAt }}</text></view>
+        <view v-if="order.remark" class="info-line a11y-md"><text class="info-label a11y-dim">备注</text><text>{{ order.remark }}</text></view>
+        <view class="info-line a11y-md">
+          <text class="info-label a11y-dim">实付金额</text>
           <text class="info-amount">￥{{ order.totalAmount }}</text>
         </view>
         <view v-for="(item, index) in order.items" :key="index" class="goods-line">
           <view class="goods-main">
-            <text class="goods-name">{{ item.productName }}</text>
-            <text class="goods-qty">x{{ item.quantity }}</text>
+            <text class="goods-name a11y-md">{{ item.productName }}</text>
+            <text class="goods-qty a11y-sm a11y-dim">x{{ item.quantity }}</text>
           </view>
-          <view v-if="item.options.length" class="goods-spec">
+          <view v-if="item.options.length" class="goods-spec a11y-sm a11y-dim">
             {{ item.options.map((option) => option.optionName).join('/') }}
           </view>
-          <view class="goods-amount">￥{{ item.itemAmount }}</view>
+          <view class="goods-amount a11y-sm">￥{{ item.itemAmount }}</view>
         </view>
       </view>
 
@@ -275,6 +294,38 @@ function continuePay(): void {
 .detail-page {
   min-height: 100vh;
   padding: 24rpx;
+}
+
+/* 无障碍取餐提醒横幅（T45）：视觉信道的高对比强化块——黑底、高亮取餐码、最大字号。
+   与震动（触觉）、微信订阅消息（离线）共同构成「双信道取餐提醒」，三者同源同触发。 */
+.a11y-pickup-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 40rpx 32rpx;
+  margin-bottom: 24rpx;
+  text-align: center;
+  background: #000000;
+  border-radius: 20rpx;
+}
+
+.a11y-pickup-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.a11y-pickup-code {
+  font-size: 132rpx;
+  font-weight: 800;
+  letter-spacing: 8rpx;
+  color: #ffd400;
+}
+
+.a11y-pickup-tip {
+  font-size: 28rpx;
+  color: #ffffff;
 }
 
 .code-card {

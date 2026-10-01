@@ -13,15 +13,18 @@ import {
 } from '@/api/ai'
 import { payOrder } from '@/api/order'
 import { ApiError } from '@/utils/request'
+import { useA11yStore } from '@/stores/a11y'
 import MessageBubble from '@/components/ai/MessageBubble.vue'
 import DraftCard from '@/components/ai/DraftCard.vue'
 
 /**
- * AI 点单页（T33，SRS 5.1 / LLD 3.4）：
+ * AI 点单页（T33，SRS 5.1 / LLD 3.4 / T45 11.4）：
  * - 聊天式 UI：气泡列表 + 底部输入框；语音靠输入法麦克风（页面提示「按住键盘麦克风说话」）；
  * - TEXT / CARD 两类消息：CARD 在气泡下方追加草稿卡片（逐项 + 合计 + 行内改量/删除 + 立即支付）；
  * - 「立即支付」→ confirm-order → pay 两连发 → 跳订单详情页（付钱永远由用户触发，AI 不代付）；
- * - 异常分支：1008 降级横幅 + 「去菜单点单」；1009 限流软提示；会话被后端判过期时提示重新点单。
+ * - 异常分支：1008 降级横幅 + 「去菜单点单」；1009 限流软提示；会话被后端判过期时提示重新点单；
+ * - 无障碍（T45，SRS 9.6「纯语音取餐」）：语音**输入**侧由系统输入法承担（无需代码），
+ *   无障碍模式下页面强化语音提示与字号对比；语音**播报**（TTS）按 LLD 11.4 归属 T70。
  *
  * 行内改量/删除之所以发一句自然语言而不是直接改本地数据：草稿只由后端 AI 工具集改写，
  * 且 confirm-order 用的就是服务端草稿——本地改会让卡片显示与实付金额不一致。
@@ -41,6 +44,8 @@ interface ChatMessage {
   /** CARD 形态下挂载的草稿单 */
   draft?: AiDraft | null
 }
+
+const a11y = useA11yStore()
 
 const messages = ref<ChatMessage[]>([])
 const input = ref('')
@@ -174,7 +179,7 @@ async function handlePay(): Promise<void> {
 </script>
 
 <template>
-  <view class="ai-page">
+  <view class="ai-page" :class="{ 'a11y-mode': a11y.enabled }">
     <!-- 1008 降级横幅（AC-13）：模型不可用时引导回菜单手动点单 -->
     <view v-if="fallbackText" class="fallback-banner">
       <text class="fallback-text">{{ fallbackText }}</text>
@@ -213,7 +218,13 @@ async function handlePay(): Promise<void> {
       />
       <view class="send-btn" :class="{ disabled: sending }" @tap="send()">发送</view>
     </view>
-    <view class="voice-hint">可按键盘上的麦克风说话，语音会自动转成文字</view>
+    <view class="voice-hint a11y-sm">
+      {{
+        a11y.enabled
+          ? '无障碍模式：全程可用键盘麦克风语音点单，无需手动打字'
+          : '可按键盘上的麦克风说话，语音会自动转成文字'
+      }}
+    </view>
   </view>
 </template>
 

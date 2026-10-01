@@ -2,14 +2,18 @@
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Expand, Fold, SwitchButton } from '@element-plus/icons-vue'
+import { Expand, Fold, Reading, SwitchButton } from '@element-plus/icons-vue'
 import { findNavItem } from '@/config/nav'
+import { useA11y } from '@/composables/useA11y'
 import { useShopStatus } from '@/composables/useShopStatus'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * 顶栏（业务页通用）：折叠开关 + 当前页面标题 + 门店营业状态（暂停接单）+ 用户与退出。
+ * 顶栏（业务页通用）：折叠开关 + 当前页面标题 + 门店营业状态（暂停接单）+ 无障碍模式 + 用户与退出。
  * 营业状态与退出登录从 Board.vue 上提到此处，业务页不再重复实现（行为保持一致）。
+ *
+ * 无障碍模式（T45，SRS 9.6）：仅切换呈现层（大字 + 高对比），不触发任何后端请求——
+ * 因此开关不会改变任何订单数据与统计口径（任务卡验收项）。
  */
 const props = defineProps<{
   collapsed: boolean
@@ -23,6 +27,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const { paused, notice, busy, ensureLoaded, setPaused, reset } = useShopStatus()
+const { enabled: a11yEnabled, toggle: toggleA11y } = useA11y()
 
 const current = computed(() => findNavItem(route.path))
 const title = computed(() => (route.meta.title as string | undefined) ?? current.value?.title ?? '')
@@ -70,6 +75,24 @@ async function handleLogout(): Promise<void> {
         <span class="status-text">{{ paused ? '暂停接单中' : '正常接单' }}</span>
         <el-switch v-model="paused" :loading="busy" :disabled="busy" @change="setPaused" />
       </div>
+
+      <!-- 无障碍模式（T45）：大字 + 高对比的呈现层开关，不影响任何业务数据 -->
+      <el-tooltip
+        :content="a11yEnabled ? '关闭大字高对比' : '开启大字高对比（无障碍）'"
+        placement="bottom"
+        effect="dark"
+      >
+        <button
+          type="button"
+          class="icon-btn"
+          :class="{ active: a11yEnabled }"
+          :aria-pressed="a11yEnabled"
+          aria-label="无障碍模式"
+          @click="toggleA11y(!a11yEnabled)"
+        >
+          <el-icon :size="18"><Reading /></el-icon>
+        </button>
+      </el-tooltip>
 
       <span class="divider" />
 
@@ -143,6 +166,12 @@ async function handleLogout(): Promise<void> {
 .icon-btn.danger:hover {
   color: var(--c-danger);
   background: var(--c-danger-soft);
+}
+
+/* 无障碍模式开启态：与「暂停接单」等功能态一致地给出持续可见的选中反馈 */
+.icon-btn.active {
+  color: var(--brand-600);
+  background: var(--brand-050);
 }
 
 .page-heading {

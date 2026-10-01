@@ -3,21 +3,24 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { createOrder } from '@/api/order'
 import { useCartStore } from '@/stores/cart'
+import { useA11yStore } from '@/stores/a11y'
 import { ApiError, CODE_SHOP_PAUSED, CODE_PRODUCT_UNAVAILABLE } from '@/utils/request'
 import { formatCents } from '@/utils/money'
 import { toCompactDateTime } from '@/utils/datetime'
 
 /**
- * 购物车页（T26，LLD 8.2）：
+ * 购物车页（T26，LLD 8.2 / T45 11.4）：
  * - 列表项：数量步进 / 删除 / 口味备注；合计为本地展示价（后端计价才是事实来源）；
  * - 「去结算」→ POST /api/customer/orders 创建订单（金额以后端返回为准）→ 跳支付确认页；
- * - 失败降级（SRS）：1006 暂停接单 / 1002 商品变动 / 1003 规格非法 → 弹窗说明并引导回菜单刷新。
+ * - 失败降级（SRS）：1006 暂停接单 / 1002 商品变动 / 1003 规格非法 → 弹窗说明并引导回菜单刷新；
+ * - 无障碍（T45）：仅放大合计金额并提升对比度，计价与下单逻辑完全不变。
  */
 
 /** 规格不合法的错误码（LLD 3.2） */
 const CODE_SPEC_INVALID = 1003
 
 const cart = useCartStore()
+const a11y = useA11yStore()
 const submitting = ref(false)
 
 // 从菜单页返回购物车时，store 数据仍在；此处无需额外加载
@@ -120,7 +123,7 @@ async function checkout(): Promise<void> {
 </script>
 
 <template>
-  <view class="cart-page">
+  <view class="cart-page" :class="{ 'a11y-mode': a11y.enabled }">
     <view v-if="cart.isEmpty" class="empty-box">
       <view class="empty-icon">车</view>
       <view class="empty-text">购物车是空的</view>
@@ -167,9 +170,9 @@ async function checkout(): Promise<void> {
 
       <view class="cart-footer">
         <view class="footer-total">
-          <text class="total-label">合计</text>
-          <text class="total-amount">￥{{ cart.totalAmount }}</text>
-          <text class="total-tip">以结算页后端金额为准</text>
+          <text class="total-label a11y-md">合计</text>
+          <text class="total-amount a11y-lg">￥{{ cart.totalAmount }}</text>
+          <text class="total-tip a11y-sm a11y-dim">以结算页后端金额为准</text>
         </view>
         <view class="checkout-btn" @click="checkout">
           {{ submitting ? '提交中…' : '去结算' }}

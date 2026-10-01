@@ -3,15 +3,18 @@ import { computed, ref } from 'vue'
 import { onPageScroll, onShow } from '@dcloudio/uni-app'
 import { getMenu, getShopStatus, type MenuCategory, type MenuProduct } from '@/api/menu'
 import { useCartStore } from '@/stores/cart'
+import { useA11yStore } from '@/stores/a11y'
 import ProductCard from '@/components/ProductCard.vue'
 import SpecSheet from '@/components/SpecSheet.vue'
 
 /**
- * 菜单页（T25，LLD 8.2）：
+ * 菜单页（T25，LLD 8.2 / T45 11.4）：
  * - 分类锚点导航：点击滚动到分类区块，滚动时反高亮当前分类；
  * - 商品卡片（图/名/价「起」）→ 半屏规格选择（单选互斥 / 加料多选 / 实时算价）→ 加入购物车；
  * - 购物车浮动球：角标显示总杯数，点击进入购物车页（非 Tab，页面栈跳转）；
- * - 暂停接单（paused=true）：全页「暂停营业」遮罩，无法进入点单（AC-14 顾客侧）。
+ * - 暂停接单（paused=true）：全页「暂停营业」遮罩，无法进入点单（AC-14 顾客侧）；
+ * - 无障碍模式开关（T45）：仅切换呈现层样式（大字 + 高对比），不改变菜单数据、不新增接口、
+ *   不影响下单与计价——开关状态只存本地，服务端完全不感知（LLD 11.4「共享逻辑、分叉呈现」）。
  */
 
 /** 锚点滚动时的顶部留白（分类导航高度） */
@@ -26,6 +29,7 @@ const activeProduct = ref<MenuProduct | null>(null)
 const pauseNotice = ref('商家已暂停接单，请稍后再来')
 
 const cart = useCartStore()
+const a11y = useA11yStore()
 
 /** 各分类区块的绝对偏移（用于滚动反高亮） */
 const sectionTops = ref<Array<{ id: number; top: number }>>([])
@@ -146,7 +150,20 @@ onShow(() => {
 </script>
 
 <template>
-  <view class="menu-page">
+  <view class="menu-page" :class="{ 'a11y-mode': a11y.enabled }">
+    <!-- 无障碍模式开关（T45）：纯呈现层开关，状态只存本地，不影响任何订单数据与统计口径 -->
+    <view class="a11y-bar" @click="a11y.toggle()">
+      <view class="a11y-bar-text">
+        <text class="a11y-bar-title">无障碍模式</text>
+        <text class="a11y-bar-desc">
+          {{ a11y.enabled ? '已开启：大字高对比 + 取餐震动提醒' : '点击开启：放大字号 / 高对比 / 取餐震动' }}
+        </text>
+      </view>
+      <view class="a11y-switch" :class="{ 'a11y-switch-on': a11y.enabled }">
+        <view class="a11y-switch-dot" />
+      </view>
+    </view>
+
     <view class="category-nav">
       <scroll-view scroll-x class="nav-scroll" :show-scrollbar="false">
         <view class="nav-inner">
@@ -212,6 +229,64 @@ onShow(() => {
 </template>
 
 <style scoped>
+/* 无障碍模式开关条（T45）：开关状态只存本地，纯呈现层 */
+.a11y-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+
+.a11y-bar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.a11y-bar-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #303133;
+}
+
+.a11y-bar-desc {
+  font-size: 24rpx;
+  color: #909399;
+}
+
+.a11y-switch {
+  position: relative;
+  width: 88rpx;
+  height: 48rpx;
+  flex-shrink: 0;
+  background: #dcdfe6;
+  border-radius: 999rpx;
+  transition: background-color 0.2s;
+}
+
+.a11y-switch-on {
+  background: #07c160;
+}
+
+.a11y-switch-dot {
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 40rpx;
+  height: 40rpx;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.a11y-switch-on .a11y-switch-dot {
+  transform: translateX(40rpx);
+}
+
 .menu-page {
   min-height: 100vh;
   padding-bottom: 160rpx;
