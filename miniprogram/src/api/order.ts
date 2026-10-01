@@ -163,3 +163,33 @@ export function getOrderDetail(orderId: number): Promise<OrderDetail> {
 export function getOrderStatus(orderId: number): Promise<OrderStatusResult> {
   return request<OrderStatusResult>({ url: `/api/customer/orders/${orderId}/status`, auth: true })
 }
+
+/** 时间轴节点（T50，W03） */
+export interface OrderTimelineNode {
+  /** CREATED / PAID / PREPARING / COMPLETED / CLOSED / VOIDED */
+  key: string
+  label: string
+  /** yyyy-MM-dd HH:mm:ss；未发生为 null */
+  time: string | null
+  /** 距上一节点耗时（秒）；首节点或未发生为 null */
+  durationSeconds: number | null
+  done: boolean
+}
+
+/** GET /api/customer/orders/{id}/timeline 响应 data（T50） */
+export interface OrderTimeline {
+  orderId: number
+  status: string
+  source: string
+  nodes: OrderTimelineNode[]
+  /** 本单制作耗时（分钟）；未完成为 null */
+  myPrepMinutes: number | null
+  /** 同渠道同日制作耗时中位数（分钟）；无样本为 null */
+  medianPrepMinutes: number | null
+  medianSampleCount: number
+}
+
+/** 订单全生命周期时间轴（T50，W03）：六时间戳 + 每段耗时 + 同渠道同日中位数对比 */
+export function getOrderTimeline(orderId: number): Promise<OrderTimeline> {
+  return request<OrderTimeline>({ url: `/api/customer/orders/${orderId}/timeline`, auth: true })
+}

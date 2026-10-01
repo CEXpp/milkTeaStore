@@ -10,11 +10,13 @@ import com.milktea.order.order.event.OrderEventPublisher;
 import com.milktea.order.order.service.ArrivalService;
 import com.milktea.order.order.service.OrderQueryService;
 import com.milktea.order.order.service.OrderService;
+import com.milktea.order.order.service.OrderTimelineService;
 import com.milktea.order.order.vo.ArrivalVo;
 import com.milktea.order.order.vo.OrderCreateVo;
 import com.milktea.order.order.vo.OrderDetailVo;
 import com.milktea.order.order.vo.OrderListItemVo;
 import com.milktea.order.order.vo.OrderStatusVo;
+import com.milktea.order.order.vo.OrderTimelineVo;
 import com.milktea.order.order.vo.PayVo;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +55,7 @@ public class CustomerOrderController {
     private final OrderQueryService orderQueryService;
     private final OrderEventPublisher orderEventPublisher;
     private final ArrivalService arrivalService;
+    private final OrderTimelineService orderTimelineService;
 
     /**
      * 创建订单（LLD 3.2）：暂停接单 1006、计价 1001~1003 由服务层抛出，经全局异常处理器返回。
@@ -133,6 +136,17 @@ public class CustomerOrderController {
     @PostMapping("/{id}/arrive")
     public R<ArrivalVo> arrive(@PathVariable("id") Long id) {
         return R.ok(arrivalService.arrive(id, currentCustomerId()));
+    }
+
+    /**
+     * 订单全生命周期时间轴（T50，W03）。
+     *
+     * <p>六时间戳 + 每段耗时 + 与「同渠道同日制作耗时中位数」的对比。纯只读：
+     * 不新增任何数据（六时间戳 V1 已预留），也不改变任何状态。</p>
+     */
+    @GetMapping("/{id}/timeline")
+    public R<OrderTimelineVo> timeline(@PathVariable("id") Long id) {
+        return R.ok(orderTimelineService.timeline(id, currentCustomerId()));
     }
 
     /** 当前登录顾客 id：由 JWT 过滤器在请求作用域内绑定（防御性判空兜底 401）。 */

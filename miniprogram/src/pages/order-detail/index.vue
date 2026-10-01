@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
-import { arriveOrder, getOrderDetail, getOrderStatus, type OrderDetail } from '@/api/order'
+import {
+  arriveOrder,
+  getOrderDetail,
+  getOrderStatus,
+  getOrderTimeline,
+  type OrderDetail,
+  type OrderTimeline
+} from '@/api/order'
 import { getQueueEstimate, type QueueEstimate } from '@/api/queue'
 import {
   subscribeOrderEvents,
@@ -38,6 +45,8 @@ const loading = ref(true)
 
 /** 队列预估（T49）：来自 T46 内核的真实队列聚合，前端不做本地估算 */
 const estimate = ref<QueueEstimate | null>(null)
+/** 生命周期时间轴（T50，W03）：六时间戳 + 每段耗时 + 同渠道同日中位数 */
+const orderTimeline = ref<OrderTimeline | null>(null)
 /** 已等待秒数（每秒刷新，用于「已等待 mm:ss」） */
 const waitedSeconds = ref(0)
 /** 到店申报时间（申报后展示，避免重复点击） */
@@ -81,6 +90,7 @@ async function start(): Promise<void> {
   await loadDetail()
   await poll()
   await loadEstimate()
+  void loadTimeline()
   refreshWaited()
   if (isActiveStatus(status.value)) {
     startRealtime()
@@ -131,8 +141,9 @@ async function applyStatus(
   }
   if (previous !== status.value) {
     await loadDetail(true)
-    // 状态变了，队列位置与预计等待也随之变化（T49）；失败静默，不影响主状态展示
+    // 状态变了，队列位置、预计等待与时间轴都会跟着变（T49/T50）；失败静默，不影响主状态展示
     void loadEstimate()
+    void loadTimeline()
     refreshWaited()
   }
   // 双信道提醒（T45）：刚刚进入「请取餐」时追加震动信道（仅无障碍模式；订阅消息由 T44 后端推送）。
@@ -211,6 +222,18 @@ async function loadEstimate(): Promise<void> {
     estimate.value = await getQueueEstimate(orderId.value)
   } catch {
     estimate.value = null
+  }
+}
+
+/** 生命周期时间轴（T50）：失败静默——时间轴是阅读性增强，缺失不影响主状态展示。 */
+async function loadTimeline(): Promise<void> {
+  if (!orderId.value) {
+    return
+  }
+  try {
+    orderTimeline.value = await getOrderTimeline(orderId.value)
+  } catch {
+    orderTimeline.value = null
   }
 }
 
@@ -303,20 +326,42 @@ const positionText = computed(() => {
   return `第 ${current.position} 位`
 })
 
-/** 时间线：下单 → 支付 → 制作 → 出餐（未发生的事件显示为 pending） */
-const timeline = computed(() => {
-  const detail = order.value
-  return [
-    { label: '已下单', time: detail?.createdAt ?? null, done: Boolean(detail?.createdAt) },
-    { label: '已支付', time: detail?.paidAt ?? null, done: Boolean(detail?.paidAt) },
-    { label: '制作中', time: detail?.startedAt ?? null, done: Boolean(detail?.startedAt) },
-    {
-      label: '已出餐',
-      time: detail?.completedAt ?? null,
-      done: Boolean(detail?.completedAt)
-    }
-  ]
+/**
+ * 时间轴节点（T50，W03）：只渲染**已发生**的节点。
+ *
+ * 这样异常单会自然跳过没走到的环节——超时关闭单只显示「已下单 → 已关闭」，
+ * 而不是摆出一串永远灰着的「已支付 / 制作中」，那反而误导顾客。
+ */
+const timelineNodes = computed(() => (orderTimeline.value?.nodes ?? []).filter((node) => node.done))
+
+/** 与今日同渠道中位数的对比文案；无样本或本单未完成时返回空（不展示对比行）。 */
+const medianText = computed(() => {
+  const data = orderTimeline.value
+  if (
+    !data ||
+    data.myPrepMinutes === null ||
+    data.medianPrepMinutes === null ||
+    data.medianSampleCount === 0
+  ) {
+    return ''
+  }
+  const diff = data.myPrepMinutes - data.medianPrepMinutes
+  const suffix = `（今日同渠道 ${data.medianSampleCount} 单）`
+  if (diff === 0) {
+    return `本单制作 ${data.myPrepMinutes} 分钟，与今日同渠道中位数持平${suffix}`
+  }
+  return `本单制作 ${data.myPrepMinutes} 分钟，${diff > 0 ? '慢于' : '快于'}今日同渠道中位数 ${data.medianPrepMinutes} 分钟${suffix}`
 })
+
+/** 单段耗时文案：不足 60 秒只显示秒；整分不显示「0 秒」。 */
+function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds} 秒`
+  }
+  const mm = Math.floor(seconds / 60)
+  const ss = seconds % 60
+  return ss === 0 ? `${mm} 分` : `${mm} 分 ${ss} 秒`
+}
 
 /** 终态补充说明（关闭 / 作废原因） */
 const terminalTip = computed(() => {
@@ -384,15 +429,27 @@ function continuePay(): void {
         </view>
       </view>
 
-      <view class="card">
-        <view class="card-title a11y-md">订单状态</view>
-        <view v-for="(node, index) in timeline" :key="index" class="timeline-node">
-          <view class="node-dot" :class="{ 'node-dot-done': node.done }"></view>
-          <view class="node-body">
-            <view class="node-label a11y-md" :class="{ 'node-label-active': node.done }">{{ node.label }}</view>
-            <view class="node-time a11y-sm a11y-dim">{{ node.time ?? '—' }}</view>
+      <!-- 订单生命周期时间轴（T50，W03）：六时间戳 + 每段耗时 + 同渠道同日中位数对比 -->
+      <view v-if="timelineNodes.length" class="card">
+        <view class="card-title a11y-md">订单时间轴</view>
+        <scroll-view scroll-x class="tl-scroll" :show-scrollbar="false">
+          <view class="tl-track">
+            <view v-for="(node, index) in timelineNodes" :key="node.key" class="tl-node">
+              <view class="tl-head">
+                <view class="tl-dot" />
+                <view v-if="index < timelineNodes.length - 1" class="tl-line" />
+              </view>
+              <view class="tl-body">
+                <text class="tl-label a11y-sm">{{ node.label }}</text>
+                <text class="tl-time a11y-sm a11y-dim">{{ node.time ? node.time.slice(11, 16) : '—' }}</text>
+                <text v-if="node.durationSeconds !== null" class="tl-dur a11y-dim">
+                  用时 {{ formatDuration(node.durationSeconds) }}
+                </text>
+              </view>
+            </view>
           </view>
-        </view>
+        </scroll-view>
+        <view v-if="medianText" class="tl-compare a11y-sm">{{ medianText }}</view>
       </view>
 
       <view class="card">
@@ -580,37 +637,71 @@ function continuePay(): void {
   font-weight: 600;
 }
 
-.timeline-node {
-  display: flex;
-  align-items: flex-start;
-  padding: 10rpx 0;
+/* 横向时间轴（T50，W03）：节点横排、可横向滚动，连线只在相邻节点之间 */
+.tl-scroll {
+  width: 100%;
 }
 
-.node-dot {
+.tl-track {
+  display: flex;
+  align-items: flex-start;
+  padding: 8rpx 0;
+}
+
+.tl-node {
+  display: flex;
+  flex-direction: column;
+  width: 190rpx;
+  flex-shrink: 0;
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+}
+
+.tl-dot {
   width: 20rpx;
   height: 20rpx;
-  margin: 8rpx 20rpx 0 0;
-  background: #e4e7ed;
+  flex-shrink: 0;
+  background: #07c160;
   border-radius: 50%;
 }
 
-.node-dot-done {
-  background: #409eff;
+.tl-line {
+  flex: 1;
+  height: 2rpx;
+  margin: 0 6rpx;
+  background: #dcdfe6;
 }
 
-.node-label {
-  font-size: 26rpx;
-  color: #c0c4cc;
+.tl-body {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12rpx;
 }
 
-.node-label-active {
+.tl-label {
+  font-weight: 600;
   color: #303133;
 }
 
-.node-time {
+.tl-time {
   margin-top: 4rpx;
-  font-size: 22rpx;
-  color: #c0c4cc;
+  color: #909399;
+}
+
+.tl-dur {
+  margin-top: 4rpx;
+  color: #909399;
+}
+
+.tl-compare {
+  padding-top: 16rpx;
+  margin-top: 16rpx;
+  line-height: 1.6;
+  color: #606266;
+  border-top: 1rpx solid #f0f2f5;
 }
 
 .info-line {
