@@ -17,6 +17,8 @@ import com.milktea.order.order.vo.BoardPendingCardVo;
 import com.milktea.order.order.vo.BoardPreparingCardVo;
 import com.milktea.order.order.vo.BoardTodayVo;
 import com.milktea.order.order.vo.BoardVo;
+import com.milktea.order.shop.service.SlaSettingsService;
+import com.milktea.order.shop.vo.SlaSettingsVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -72,6 +74,7 @@ public class AdminOrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderEventPublisher eventPublisher;
+    private final SlaSettingsService slaSettingsService;
 
     /**
      * 看板全量查询（3 秒轮询）：双分区卡片 + 今日概览四数。
@@ -79,11 +82,14 @@ public class AdminOrderService {
     public BoardVo board() {
         LocalDateTime now = LocalDateTime.now();
 
+        // SLA 阈值（T52）：先取出来——它既参与排序（转红置顶），也要随响应下发给前端
+        SlaSettingsVo sla = slaSettingsService.current();
+
         List<Order> pendingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, OrderStatus.PAID.name()));
-        // 排序改到内存（T51）：规则含「已申报到店时间优先」，用 Comparator 比拼 SQL 直观；
-        // 单店量级下内存排序没有性能压力。未申报时退化为「先付先做」，与 LLD 3.5 逐字一致。
-        pendingOrders.sort(pendingComparator());
+        // 排序改到内存（T51/T52）：规则含「转红置顶」与「已申报到店时间优先」，
+        // 用 Comparator 比拼 SQL 直观；单店量级下内存排序没有性能压力。
+        pendingOrders.sort(pendingComparator(sla.dangerSeconds(), now));
         List<Order> preparingOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, OrderStatus.PREPARING.name())
                 .orderByAsc(Order::getStartedAt)
@@ -119,29 +125,44 @@ public class AdminOrderService {
                         Duration.between(order.getStartedAt(), now).toMinutes()))
                 .collect(Collectors.toList()));
         board.setToday(buildToday(todayOrders, todayVoided, itemMap));
+        board.setSla(sla);
         return board;
     }
 
     /**
-     * 待制作分区的建议排序（T51，W02「我将到」）。
+     * 待制作分区的排序（T51 / T52）。
      *
      * <pre>
-     *   1) 已申报预计到店时长的在前，并按「到达临近度」升序（3 &lt; 5 &lt; 10 分钟）
-     *   2) 未申报的一律按 paid_at 升序、id 升序 —— 即 LLD 3.5 的「先付先做」
+     *   1) 已等待超过 danger 阈值的<b>置顶</b>（T52 验收「超 danger 转红并置顶」）
+     *   2) 其余中：已申报预计到店时长的在前，按到达临近度升序（3 &lt; 5 &lt; 10 分钟）（T51）
+     *   3) 最后按 paid_at 升序、id 升序 —— 即 LLD 3.5 的「先付先做」
      * </pre>
      *
-     * <p>这是<b>建议顺序</b>而非强制：店长完全可以不理会（任务卡「只给建议顺序，不强制」）。
-     * 关键在于「不申报时与现状一致」——所有订单的 etaMinutes 均为 null 时，本比较器退化为
-     * 纯粹的 paid_at + id 排序，与改动前逐字相同（T51 验收项）。</p>
+     * <p>第 3 条保证「不申报时与现状一致」：所有订单 {@code etaMinutes} 均为 null 且无人超 danger 时，
+     * 本比较器退化为纯粹的 paid_at + id 排序，与改动前<b>逐字相同</b>（T51 验收项）。</p>
+     *
+     * <p>SLA 优先于到店预约：SLA 是硬指标（顾客已经等太久了），到店预约只是「建议顺序」。</p>
      *
      * <p>注意 {@code arrivedAt}（「我已到店」）<b>不</b>参与本排序——那是 T49 的验收要求。</p>
      */
-    private Comparator<Order> pendingComparator() {
+    private Comparator<Order> pendingComparator(int dangerSeconds, LocalDateTime now) {
         return Comparator
-                .comparingInt((Order order) -> order.getEtaMinutes() == null ? 1 : 0)
+                .comparingInt((Order order) -> isSlaDanger(order, dangerSeconds, now) ? 0 : 1)
+                .thenComparingInt((Order order) -> order.getEtaMinutes() == null ? 1 : 0)
                 .thenComparing(Order::getEtaMinutes, Comparator.nullsLast(Comparator.<Integer>naturalOrder()))
                 .thenComparing(Order::getPaidAt, Comparator.nullsLast(Comparator.<LocalDateTime>naturalOrder()))
                 .thenComparing(Order::getId);
+    }
+
+    /**
+     * 是否已超 SLA 转红阈值（T52）。
+     *
+     * <p>只看「已等待时长」，不做任何状态判定、不写任何字段——因此与 6.1 状态流转完全无关
+     * （任务卡验收「与 6.1 状态流转不冲突」）。</p>
+     */
+    private boolean isSlaDanger(Order order, int dangerSeconds, LocalDateTime now) {
+        return order.getPaidAt() != null
+                && Duration.between(order.getPaidAt(), now).getSeconds() >= dangerSeconds;
     }
 
     /**

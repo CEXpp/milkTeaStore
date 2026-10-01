@@ -33,3 +33,26 @@ export function getShopStatus(): Promise<ShopStatus> {
 export function updateShopPause(data: ShopPauseRequest): Promise<ShopPauseResult> {
   return request<ShopPauseResult>({ url: '/admin/shop/pause', method: 'put', data })
 }
+
+/** PUT /api/admin/shop/sla 请求体（T52）：SLA 预警阈值（秒） */
+export interface SlaSettingsRequest {
+  warnSeconds: number
+  /** 须大于 warnSeconds，否则后端返回 1001 */
+  dangerSeconds: number
+}
+
+/** PUT /api/admin/shop/sla 响应 data：写入后的生效阈值 */
+export interface SlaSettingsResult {
+  warnSeconds: number
+  dangerSeconds: number
+}
+
+/**
+ * 设置看板 SLA 预警阈值（T52）。
+ *
+ * 写入 shop_config 后随看板响应即时下发，因此保存后下一次刷新即生效
+ * （验收项「阈值改动后预警即时生效」）。
+ */
+export function updateSla(data: SlaSettingsRequest): Promise<SlaSettingsResult> {
+  return request<SlaSettingsResult>({ url: '/admin/shop/sla', method: 'put', data })
+}

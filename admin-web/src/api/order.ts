@@ -51,11 +51,20 @@ export interface BoardTodaySummary {
   refundAmount: string
 }
 
+/** SLA 预警阈值（T52）：来自 shop_config，随看板响应一起下发（改动后下一次刷新即生效） */
+export interface BoardSlaSettings {
+  /** 转黄阈值（秒） */
+  warnSeconds: number
+  /** 转红阈值（秒）：达到即置顶 */
+  dangerSeconds: number
+}
+
 /** GET /api/admin/orders/board 响应 data */
 export interface OrderBoardResult {
   pending: BoardPendingOrder[]
   preparing: BoardPreparingOrder[]
   today: BoardTodaySummary
+  sla: BoardSlaSettings
 }
 
 /** start / complete / void 响应 data：更新后的订单摘要（字段以看板卡片结构为基准，联调期如有出入以后端为准） */
