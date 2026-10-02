@@ -1,9 +1,12 @@
 package com.milktea.order.ai.config;
 
 import com.milktea.order.ai.OrderAssistant;
+import com.milktea.order.ai.ShopCopilotAssistant;
 import com.milktea.order.ai.session.ChatMemoryStoreImpl;
+import com.milktea.order.ai.tools.AiToolWhitelist;
 import com.milktea.order.ai.tools.DraftOrderTool;
 import com.milktea.order.ai.tools.MenuSearchTool;
+import com.milktea.order.ai.tools.ShopStatsTool;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -54,6 +57,34 @@ public class LangChain4jConfig {
                 .modelName(model)
                 .temperature(temperature)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
+                .build();
+    }
+
+    /**
+     * 店长 Copilot 装配（T66/T67，W07）。
+     *
+     * <p><b>只注册只读统计工具</b>：{@link ShopStatsTool} 的四个 {@code @Tool} 全部是查询，
+     * 没有任何写操作。越权提问（「帮我把珍珠奶茶下架」）之所以被拒，根因是
+     * <b>模型手里根本没有这样的工具可调</b>，而不是靠提示词叮嘱它别做
+     * （SRS 5.1 边界 + T66 设计纪律「只读是 AI 进入后台的正确权限级别」）。</p>
+     *
+     * <p><b>与点单助手完全隔离</b>：本实例不注册 {@link MenuSearchTool} 与
+     * {@link DraftOrderTool}——那两个能改草稿，不该出现在经营参谋手里。两个
+     * {@code AiServices} 各自持有工具集，互不影响。</p>
+     *
+     * <p><b>启动自检</b>：装配前先跑 {@link AiToolWhitelist#assertReadOnly()}，
+     * 白名单里一旦混进写操作直接让应用起不来——带着一个能改数据的 AI 上线，
+     * 比启动失败严重得多。</p>
+     *
+     * @param chatModel     见 {@link #chatModel}
+     * @param statsTool     只读统计工具（唯一注入的工具）
+     */
+    @Bean
+    public ShopCopilotAssistant shopCopilotAssistant(ChatModel chatModel, ShopStatsTool statsTool) {
+        AiToolWhitelist.assertReadOnly();
+        return AiServices.builder(ShopCopilotAssistant.class)
+                .chatModel(chatModel)
+                .tools(statsTool)
                 .build();
     }
 
