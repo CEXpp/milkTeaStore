@@ -13,7 +13,13 @@ import java.util.List;
  * @param ownerId    发起人 customer id（前端据此决定是否显示「冻结并支付」）
  * @param status阶段（OPEN / FROZEN / CONVERTING / CONVERTED / EXPIRED）
  * @param expired    是否已到期（到点仍未支付即不可转正式单）
+ * @param joined     当前登录顾客是否已在池中——由服务端判定，前端据此显示
+ *                   「退出拼单」还是「提交选品」。<b>不让客户端自己猜</b>：
+ *                   池里只有一个成员时无法区分「那是我」还是「那是别人」。
  * @param canFreeze  当前身份能否冻结：仅发起人且处于 OPEN 且未到期
+ * @param canPay     当前身份能否支付 / 放弃：仅发起人且已冻结。
+ *                   与 {@link #canFreeze} 分开成两个字段而非复用——
+ *                   冻结后 isOwner 仍为真但该阶段不该再能冻结，前端据此切换按钮组
  * @param expiresAt  截止时间
  * @param totalAmount合计金额（两位小数字符串，后端现算）
  * @param cupCount   总杯数
@@ -25,7 +31,9 @@ public record GroupCartVo(
         Long ownerId,
         String status,
         boolean expired,
+        boolean joined,
         boolean canFreeze,
+        boolean canPay,
         String expiresAt,
         String totalAmount,
         int cupCount,

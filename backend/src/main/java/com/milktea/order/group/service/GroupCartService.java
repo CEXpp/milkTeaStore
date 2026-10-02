@@ -309,13 +309,21 @@ public class GroupCartService {
         boolean canFreeze = !expired
                 && GroupCart.STATUS_OPEN.equals(cart.getStatus())
                 && Objects.equals(cart.getOwnerId(), customerId);
+        // joined 由服务端判定：池里只有一人时客户端无法区分「那是我」还是「那是别人」
+        boolean joined = drafts.stream().anyMatch(draft -> Objects.equals(draft.customerId(), customerId));
+        boolean isOwner = Objects.equals(cart.getOwnerId(), customerId);
+        // 支付 / 放弃只在「已冻结且我是发起人」时开放：非发起人点了只会被后端 1004 挡回，
+        // 与其让用户点了才报错，不如根本不给按钮。
+        boolean canPay = isOwner && GroupCart.STATUS_FROZEN.equals(cart.getStatus()) && !expired;
 
         return new GroupCartVo(
                 cart.getGroupUuid(),
                 cart.getOwnerId(),
                 cart.getStatus(),
                 expired,
+                joined,
                 canFreeze,
+                canPay,
                 cart.getExpiresAt() == null ? null : cart.getExpiresAt().format(DATETIME_FMT),
                 MoneyUtils.format(total),
                 cups,

@@ -151,6 +151,29 @@ function goCart(): void {
   uni.navigateTo({ url: '/pages/cart/index' })
 }
 
+/**
+ * 发起拼单（T64，W13）：不带 uuid 进拼单页即新建一个池。
+ * 与购物车浮动球同处一排——两者都是「先攒意图，再去结算」的入口。
+ */
+function goGroup(): void {
+  uni.navigateTo({ url: '/pages/group/index' })
+}
+
+/** 加入已有拼单：粘贴口令（口令即 groupUuid）。 */
+function joinGroup(): void {
+  uni.showModal({
+    title: '加入拼单',
+    editable: true,
+    placeholderText: '粘贴拼单口令',
+    success: (res) => {
+      const code = (res.content ?? '').trim()
+      if (res.confirm && code) {
+        uni.navigateTo({ url: `/pages/group/index?uuid=${code}` })
+      }
+    }
+  })
+}
+
 // 首次进入显示加载态；再次回到菜单页静默刷新，同步最新的上下架 / 暂停接单状态
 onShow(() => {
   void load(Boolean(menu.value))
@@ -221,6 +244,18 @@ onShow(() => {
         <view class="empty-icon">!</view>
         <view class="empty-text">菜单加载失败</view>
         <view class="empty-sub" @click="load(false)">点击重试</view>
+      </view>
+    </view>
+
+    <!-- 拼单入口（T64，W13）：发起 / 加入。与购物车同属「攒意图」的入口，故同排 -->
+    <view class="group-entry">
+      <view class="group-btn" @click="goGroup">
+        <text class="group-btn-icon">👥</text>
+        <text class="group-btn-text">发起拼单</text>
+      </view>
+      <view class="group-btn" @click="joinGroup">
+        <text class="group-btn-icon">🔑</text>
+        <text class="group-btn-text">加入拼单</text>
       </view>
     </view>
 
@@ -391,6 +426,38 @@ onShow(() => {
   text-align: center;
   background: #fff;
   border-radius: 16rpx;
+}
+
+/* 拼单入口条（T64）：固定在购物车浮动球上方，两个并排小按钮 */
+.group-entry {
+  position: fixed;
+  right: 32rpx;
+  bottom: 280rpx;
+  z-index: 800;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.group-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 104rpx;
+  height: 104rpx;
+  background: #fff;
+  border-radius: 52rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
+}
+
+.group-btn-icon {
+  font-size: 36rpx;
+}
+
+.group-btn-text {
+  font-size: 20rpx;
+  color: #6b7280;
 }
 
 .cart-ball {

@@ -393,14 +393,20 @@ function handleStart(orderId: number): void {
   void runAction(orderId, () => startOrder(orderId), '已开始制作')
 }
 
-/** 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾 */
+/**
+ * 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾。
+ *
+ * memberTag（T64/W14）：团单时带上成员标识，出餐喊「003 王工」；
+ * 非团单为 null，模板里不渲染 —— 单人单界面与引入团单前完全一致（零干扰）。
+ */
 const checklistLines = computed(() => {
-  const lines: Array<{ key: string; text: string }> = []
+  const lines: Array<{ key: string; text: string; memberTag: string | null }> = []
   checklist.value?.items.forEach((item, itemIndex) => {
     item.options.forEach((option, optionIndex) => {
       lines.push({
         key: `${itemIndex}-${optionIndex}`,
-        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`
+        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`,
+        memberTag: item.memberTag
       })
     })
   })
@@ -649,6 +655,8 @@ onBeforeUnmount(() => {
         </div>
         <el-checkbox-group v-model="checkedKeys" class="checklist-body">
           <el-checkbox v-for="line in checklistLines" :key="line.key" :label="line.key">
+            <!-- 团单成员标识（T64/W14）：出餐喊「003 王工」。非团单为 null 就不渲染 -->
+            <span v-if="line.memberTag" class="checklist-member">{{ line.memberTag }}</span>
             {{ line.text }}
           </el-checkbox>
         </el-checkbox-group>
@@ -756,6 +764,18 @@ onBeforeUnmount(() => {
   gap: var(--gap-1);
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* 团单成员标识（T64/W14）：靛蓝底衬托，出餐时一眼看到这杯是谁的 */
+.checklist-member {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--brand-500);
+  border-radius: var(--radius-pill);
 }
 
 .checklist-empty {

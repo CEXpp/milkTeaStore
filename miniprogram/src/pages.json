@@ -33,6 +33,14 @@
 			}
 		},
 		{
+			// 拼单页（T64，W13）：未带 uuid 进来则创建池，带 uuid 则加入；含冻结与结算。
+			// 非 Tab —— 从菜单页/我的订单页按需进入（与购物车同属页面栈跳转）
+			"path": "pages/group/index",
+			"style": {
+				"navigationBarTitleText": "拼单"
+			}
+		},
+		{
 			"path": "pages/order-detail/index",
 			"style": {
 				"navigationBarTitleText": "订单详情"

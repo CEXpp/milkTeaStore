@@ -296,6 +296,7 @@ public class AdminOrderService {
                     item.getProductName(),
                     item.getQuantity() == null ? 0 : item.getQuantity(),
                     optionLines(item.getOptionsSnapshot()),
+                    item.getMemberTag(),
                     descriptions.get(item.getProductId())));
         }
         return new OrderChecklistVo(orderId, order.getOrderNo(), order.getPickupCode(), order.getSource(),
@@ -427,12 +428,23 @@ public class AdminOrderService {
         return map;
     }
 
-    /** 看板摘要："珍珠奶茶x1 大杯/少冰/珍珠"（LLD 3.5 示例格式）。 */
+    /**
+     * 看板摘要："珍珠奶茶x1 大杯/少冰/珍珠"（LLD 3.5 示例格式）。
+     *
+     * <p><b>团单前缀成员标识</b>（T64/W14）：{@code order_item.member_tag} 非空时
+     * 渲染成「003 王工 珍珠奶茶x1 大杯/少冰」，让店员一眼辨出这杯是谁的。
+     * 非团单的 {@code member_tag} 恒为 {@code null}，走原路径<b>一字不变</b>——
+     * 「单人单界面与现状完全一致」（无回归）由这个分支保证，
+     * 而不是靠前端判断「这是不是团单」再决定怎么渲染。</p>
+     */
     private List<String> summarize(List<OrderItem> items) {
         List<String> lines = new ArrayList<>(items.size());
         for (OrderItem item : items) {
-            StringBuilder sb = new StringBuilder()
-                    .append(item.getProductName())
+            StringBuilder sb = new StringBuilder();
+            if (item.getMemberTag() != null && !item.getMemberTag().isBlank()) {
+                sb.append(item.getMemberTag().trim()).append(' ');
+            }
+            sb.append(item.getProductName())
                     .append('x')
                     .append(item.getQuantity());
             String options = String.join("/", optionNames(item.getOptionsSnapshot()));
@@ -444,12 +456,19 @@ public class AdminOrderService {
         return lines;
     }
 
-    /** 商家摘要（与顾客端列表同构）："珍珠奶茶x1(大杯/少冰/珍珠)"。 */
+    /**
+     * 商家摘要（与顾客端列表同构）："珍珠奶茶x1(大杯/少冰/珍珠)"。
+     *
+     * <p>同样对团单加成员标识前缀（T64）；与 {@link #summarize} 的差别只是规格用括号包裹。</p>
+     */
     private List<String> summarizeWithParen(List<OrderItem> items) {
         List<String> lines = new ArrayList<>(items.size());
         for (OrderItem item : items) {
-            StringBuilder sb = new StringBuilder()
-                    .append(item.getProductName())
+            StringBuilder sb = new StringBuilder();
+            if (item.getMemberTag() != null && !item.getMemberTag().isBlank()) {
+                sb.append(item.getMemberTag().trim()).append(' ');
+            }
+            sb.append(item.getProductName())
                     .append('x')
                     .append(item.getQuantity());
             String options = String.join("/", optionNames(item.getOptionsSnapshot()));
