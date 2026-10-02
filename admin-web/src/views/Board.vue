@@ -52,8 +52,18 @@ const board = ref<OrderBoardResult | null>(null)
 /** 接单节奏建议（T48）：只读提示——超阈值仅「建议」暂停，系统绝不自动执行 */
 const pace = ref<QueuePace | null>(null)
 
+/**
+ * SLA 阈值的兜底值（T52）。
+ *
+ * <p>阈值本应由看板响应下发，但模板里有 `sla.warnSeconds` 这类直接取值——
+ * 一旦该值缺失就会在<b>渲染阶段</b>抛 TypeError，整个看板白屏，
+ * 连带 onMounted 里的轮询都发不出去（表现为「一个请求都没发」）。
+ * 阈值只影响卡片配色与置顶排序，缺了拿默认值顶着远比白屏好，故在此单点声明。</p>
+ */
+const DEFAULT_SLA: BoardSlaSettings = { warnSeconds: 300, dangerSeconds: 600 }
+
 /** SLA 阈值（T52）：随看板响应下发；单独存一份，避免受 board 的差量合并影响 */
-const sla = ref<BoardSlaSettings>({ warnSeconds: 300, dangerSeconds: 600 })
+const sla = ref<BoardSlaSettings>({ ...DEFAULT_SLA })
 /** 爆单预测横幅（T69）：由看板的既有轮询带着刷新，不额外起定时器 */
 const forecastBanner = ref<InstanceType<typeof ForecastBanner> | null>(null)
 /** 秒级时间戳：统一驱动各卡片的等待时长 mm:ss（卡片不各自起定时器） */
@@ -188,8 +198,13 @@ async function refreshBoard(): Promise<void> {
     }
     knownPendingIds = pendingIds
     pruneHighlight(now)
-    // SLA 阈值随响应下发（T52）：单独存一份，商家改阈值后下一次刷新立即生效
-    sla.value = data.sla
+    // SLA 阈值随响应下发（T52）：单独存一份，商家改阈值后下一次刷新立即生效。
+    //
+    // 用 `?? sla.value` 兜底：一旦后端某次没带这个字段，直接赋值会把它写成 undefined，
+    // 而模板里有 `sla.warnSeconds`——渲染阶段抛 TypeError 会让整个看板白屏，
+    // 连带 onMounted 里的轮询都发不出去（表现就是「一个请求都没发」）。
+    // 阈值只影响卡片配色与置顶排序，拿上一次的值顶着远比崩掉好。
+    sla.value = data.sla ?? sla.value
 
     const prev = board.value
     const pending = mergePending(data.pending)
@@ -268,10 +283,12 @@ async function saveSla(): Promise<void> {
   }
   slaSaving.value = true
   try {
-    sla.value = await updateSla({
-      warnSeconds: slaForm.warnSeconds,
-      dangerSeconds: slaForm.dangerSeconds
-    })
+    // 同上：保存接口的返回值缺失时保留原值，绝不把 sla 写成 undefined（否则整页白屏）
+    sla.value =
+      (await updateSla({
+        warnSeconds: slaForm.warnSeconds,
+        dangerSeconds: slaForm.dangerSeconds
+      })) ?? sla.value
     slaDialogVisible.value = false
     ElMessage.success('SLA 阈值已更新')
     void refreshBoard()
@@ -547,7 +564,8 @@ onBeforeUnmount(() => {
     <!-- SLA 预警阈值入口（T52）：阈值随看板响应下发，改完下一次刷新即生效 -->
     <div class="board-toolbar">
       <span class="toolbar-tip">
-        SLA 预警：{{ sla.warnSeconds }} 秒转黄 / {{ sla.dangerSeconds }} 秒转红并置顶
+        SLA 预警：{{ sla?.warnSeconds ?? DEFAULT_SLA.warnSeconds }} 秒转黄 /
+        {{ sla?.dangerSeconds ?? DEFAULT_SLA.dangerSeconds }} 秒转红并置顶
       </span>
       <el-button link type="primary" size="small" @click="openSlaDialog">修改阈值</el-button>
     </div>
@@ -610,8 +628,8 @@ onBeforeUnmount(() => {
           :highlighted="highlightedIds.includes(order.orderId)"
           :busy="busyIds.includes(order.orderId)"
           :now-ts="nowTs"
-          :warn-seconds="sla.warnSeconds"
-          :danger-seconds="sla.dangerSeconds"
+          :warn-seconds="sla?.warnSeconds ?? DEFAULT_SLA.warnSeconds"
+          :danger-seconds="sla?.dangerSeconds ?? DEFAULT_SLA.dangerSeconds"
           @start="handleStart"
           @void="handleVoid"
         />
