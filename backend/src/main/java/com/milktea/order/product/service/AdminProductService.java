@@ -1,6 +1,7 @@
 package com.milktea.order.product.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.milktea.order.common.exception.BusinessException;
 import com.milktea.order.common.exception.ErrorCode;
 import com.milktea.order.common.result.PageResult;
@@ -15,6 +16,7 @@ import com.milktea.order.product.mapper.ProductMapper;
 import com.milktea.order.product.mapper.ProductSpecGroupMapper;
 import com.milktea.order.product.mapper.SpecGroupMapper;
 import com.milktea.order.product.vo.AdminProductVo;
+import com.milktea.order.product.vo.ProductBatchStatusVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -126,6 +128,75 @@ public class AdminProductService {
         product.setUpdatedAt(LocalDateTime.now());
         productMapper.updateById(product);
         log.info("[T21] product status changed id={} status={}", id, status);
+    }
+
+    /**
+     * 批量上下架（T61，v1 底座 F07）：列表页多选后一次生效。
+     *
+     * <p><b>绝不引入 quantity / 库存字段</b>（任务卡设计纪律）：本方法只批量改
+     * {@code product.status}，严守 11 章既有决策「上下架已覆盖售罄场景」。
+     * 「估清」在本系统里的含义就是「下架」——没有卖完的计数，也就没有超卖与库存对账问题。</p>
+     *
+     * <p><b>用条件更新而非逐条 selectById + update</b>：{@code WHERE status != 目标态}
+     * 让「本来就是目标态」的商品自然不计数，既幂等（重复点不会重复更新），
+     * 也天然防并发——两位店长同时操作时不会互相覆盖。</p>
+     *
+     * @param productIds 前端提交的 id 列表（内部去重并剔除 null）
+     * @param status     目标状态 1 上架 / 0 下架
+     * @return 实际受影响条数（供前端显示「已下架 N / 选中 M」）
+     */
+    public ProductBatchStatusVo updateStatusBatch(List<Long> productIds, Integer status) {
+        List<Long> ids = distinct(productIds == null ? List.of() : productIds);
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "请先选择商品");
+        }
+        // 商品必须全部存在，否则 1002：静默跳过不存在的 id 会让店长以为整批都生效了
+        long found = productMapper.selectCount(new LambdaQueryWrapper<Product>().in(Product::getId, ids));
+        if (found != ids.size()) {
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND.getCode(), "所选商品中存在已删除项，请刷新后重试");
+        }
+
+        int affected = productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                .in(Product::getId, ids)
+                .ne(Product::getStatus, status)
+                .set(Product::getStatus, status)
+                .set(Product::getUpdatedAt, LocalDateTime.now()));
+        log.info("[T61] product batch status status={} requested={} affected={}", status, ids.size(), affected);
+        return new ProductBatchStatusVo(ids.size(), affected);
+    }
+
+    /**
+     * 分类级一键估清（T61）：把该分类下全部商品置为上下架。
+     *
+     * <p>「奶茶类今日售罄」= 整类下架。顾客端菜单按 {@code status=1} 过滤（AC-08），
+     * 故整类下架后该类在菜单上立即消失；恢复后重新展示——无需任何额外改动。</p>
+     *
+     * <p><b>空分类不算错误</b>：分类存在但没有商品时返回 0/0。分类不存在才报 1001
+     * ——那是前端传错了 id，而「这个分类本来就没东西」是合法状态。</p>
+     */
+    public ProductBatchStatusVo.Category updateCategoryStatus(Long categoryId, Integer status) {
+        Category category = categoryMapper.selectById(categoryId);
+        if (category == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "分类不存在");
+        }
+        List<Long> ids = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                        .select(Product::getId)
+                        .eq(Product::getCategoryId, categoryId))
+                .stream()
+                .map(Product::getId)
+                .collect(Collectors.toList());
+
+        int affected = 0;
+        if (!ids.isEmpty()) {
+            affected = productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                    .in(Product::getId, ids)
+                    .ne(Product::getStatus, status)
+                    .set(Product::getStatus, status)
+                    .set(Product::getUpdatedAt, LocalDateTime.now()));
+        }
+        log.info("[T61] product category status categoryId={} status={} total={} affected={}",
+                categoryId, status, ids.size(), affected);
+        return new ProductBatchStatusVo.Category(categoryId, category.getName(), ids.size(), affected);
     }
 
     /**
