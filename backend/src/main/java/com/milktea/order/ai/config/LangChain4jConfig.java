@@ -2,11 +2,13 @@ package com.milktea.order.ai.config;
 
 import com.milktea.order.ai.OrderAssistant;
 import com.milktea.order.ai.ShopCopilotAssistant;
+import com.milktea.order.ai.copilot.CopilotTrace;
 import com.milktea.order.ai.session.ChatMemoryStoreImpl;
 import com.milktea.order.ai.tools.AiToolWhitelist;
 import com.milktea.order.ai.tools.DraftOrderTool;
 import com.milktea.order.ai.tools.MenuSearchTool;
 import com.milktea.order.ai.tools.ShopStatsTool;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -76,6 +78,10 @@ public class LangChain4jConfig {
      * 白名单里一旦混进写操作直接让应用起不来——带着一个能改数据的 AI 上线，
      * 比启动失败严重得多。</p>
      *
+     * <p><b>越权拦截是两道</b>（T67）：第一道是「压根没注册写工具」；
+     * 第二道是 {@code hallucinatedToolNameStrategy}——模型幻觉出一个写操作工具名时
+     * 一律改写成拒绝语回给模型。提示词只负责让回答得体，**不承担安全职责**。</p>
+     *
      * @param chatModel     见 {@link #chatModel}
      * @param statsTool     只读统计工具（唯一注入的工具）
      */
@@ -85,6 +91,26 @@ public class LangChain4jConfig {
         return AiServices.builder(ShopCopilotAssistant.class)
                 .chatModel(chatModel)
                 .tools(statsTool)
+                // 拦截未登记的工具名（T67）：模型「幻觉」出一个写操作工具名时，
+                // 缺省行为可能被当作可执行调用；这里一律改写成拒绝语回给模型，
+                // 模型据此回答「我没有修改权限」。这是越权拦截的**最后一道**，
+                // 第一道是「根本没注册写工具」。
+                .hallucinatedToolNameStrategy(request -> ToolExecutionResultMessage.from(
+                        request,
+                        "工具 " + request.name() + " 不存在。本助手只有查询权限，没有任何修改数据的工具；"
+                                + "请告知用户该操作需到对应管理页面手动完成。"))
+                // 记录工具调用轨迹（T67）：面板的「原始数据」直接展示工具返回原文，
+                // 因此「AI 的数字能在统计接口中复现」不靠人工比对，而是同源。
+                .afterToolExecution(execution -> {
+                    CopilotTrace trace = CopilotTrace.CURRENT.isBound() ? CopilotTrace.CURRENT.get() : null;
+                    if (trace == null) {
+                        return;
+                    }
+                    String name = execution.request() == null ? "unknown" : execution.request().name();
+                    String args = execution.request() == null ? null : execution.request().arguments();
+                    trace.record(name, args, execution.result(), execution.hasFailed(),
+                            !AiToolWhitelist.isAllowed(name));
+                })
                 .build();
     }
 
