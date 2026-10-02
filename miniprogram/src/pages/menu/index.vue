@@ -27,6 +27,13 @@ const sheetVisible = ref(false)
 const activeProduct = ref<MenuProduct | null>(null)
 /** 暂停提示语（menu 接口只给 paused，提示语取 shop-status 的 notice） */
 const pauseNotice = ref('商家已暂停接单，请稍后再来')
+/**
+ * 营业公告（T62）：店长发布的售罄 / 新品 / 预计恢复等说明。
+ *
+ * 与 {@link pauseNotice} 同源（都是 shop-status.notice）但<b>用法不同</b>：公告是常态信息，
+ * 顶部条常驻展示；暂停提示语只在 paused 遮罩里出现。
+ */
+const notice = ref('')
 
 const cart = useCartStore()
 const a11y = useA11yStore()
@@ -52,12 +59,13 @@ async function load(silent = false): Promise<void> {
     activeCategoryId.value = first ? first.id : null
     // 等待渲染完成后测量各分类区块位置
     setTimeout(measureSections, 300)
-    if (result.paused) {
-      // 暂停时才补一次 shop-status 取提示语（menu 契约只有 paused 字段）
-      const status = await getShopStatus()
-      if (status.notice) {
-        pauseNotice.value = status.notice
-      }
+
+    // 公告始终要取（menu 契约只有 paused，没有公告字段）。
+    // 暂停时才额外用它覆盖遮罩里的提示语——同一份 notice 两种用法。
+    const status = await getShopStatus()
+    notice.value = status.notice ?? ''
+    if (result.paused && status.notice) {
+      pauseNotice.value = status.notice
     }
   } catch {
     // 错误提示已由 request 层 toast 直显
@@ -151,6 +159,14 @@ onShow(() => {
 
 <template>
   <view class="menu-page" :class="{ 'a11y-mode': a11y.enabled }">
+    <!-- 营业公告条（T62）：店长发布的售罄 / 新品 / 预计恢复等说明，置顶常驻。
+         不做自动消失——公告是需要被读到的信息，读完由用户自己点 × 收起。 -->
+    <view v-if="notice" class="notice-bar" @click="notice = ''">
+      <text class="notice-icon">📢</text>
+      <text class="notice-text">{{ notice }}</text>
+      <text class="notice-close">×</text>
+    </view>
+
     <!-- 无障碍模式开关（T45）：纯呈现层开关，状态只存本地，不影响任何订单数据与统计口径 -->
     <view class="a11y-bar" @click="a11y.toggle()">
       <view class="a11y-bar-text">
@@ -229,6 +245,36 @@ onShow(() => {
 </template>
 
 <style scoped>
+/* 营业公告条（T62）：暖底色 + 左侧色条，与下方白色卡片区区分；点× 可本次收起 */
+.notice-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 20rpx;
+  margin-bottom: 16rpx;
+  background: #fff7e8;
+  border-left: 6rpx solid #e0a33c;
+  border-radius: 12rpx;
+}
+
+.notice-icon {
+  font-size: 28rpx;
+}
+
+.notice-text {
+  flex: 1;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #8a6318;
+}
+
+.notice-close {
+  padding: 0 8rpx;
+  font-size: 34rpx;
+  line-height: 1;
+  color: #b08a4a;
+}
+
 /* 无障碍模式开关条（T45）：开关状态只存本地，纯呈现层 */
 .a11y-bar {
   display: flex;

@@ -136,7 +136,10 @@ public class MenuService {
         Map<String, String> config = loadShopConfig();
         ShopStatusVo status = new ShopStatusVo();
         status.setPaused(Boolean.parseBoolean(config.getOrDefault(CONFIG_PAUSED, Boolean.FALSE.toString())));
-        status.setNotice(config.get(CONFIG_NOTICE));
+        // T62：公告归一化——空白（未发布 / 已撤下）统一回 null，
+        // 让前端只判一次 notice != null 即可，不必同时处理 null / "" / 纯空格三种「等于没有」
+        String notice = config.get(CONFIG_NOTICE);
+        status.setNotice(StringUtils.hasText(notice) ? notice.trim() : null);
         return status;
     }
 

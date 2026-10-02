@@ -556,11 +556,12 @@ onBeforeUnmount(() => {
       </el-button>
     </div>
 
-    <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转 -->
+    <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转。
+         T62 起 notice 是「营业公告」，店长可自主编辑；暂停原因建议一并写进公告。 -->
     <div v-if="paused" class="pause-banner">
       <span class="banner-dot" />
       <span class="banner-text">
-        已暂停接单：顾客端无法新增下单（下单返回 1006）<span v-if="notice">· {{ notice }}</span>
+        已暂停接单：顾客端无法新增下单（下单返回 1006）<span v-if="notice">· 当前公告：{{ notice }}</span>
         ；进行中订单不受影响，可照常制作与出餐。
       </span>
     </div>
