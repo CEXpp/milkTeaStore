@@ -407,6 +407,22 @@ const checklistLines = computed(() => {
   return lines
 })
 
+/**
+ * 制作指引（T60，W22）：按商品分组的当前描述，插在该商品规格行之上。
+ *
+ * 刻意与规格行分开呈现：规格是「本单要做什么」（快照，逐项打勾核对），
+ * 描述是「一直怎么做」（当前 SOP，说明性文本，不参与勾选）。
+ */
+const checklistGuides = computed(() =>
+  (checklist.value?.items ?? [])
+    .map((item, itemIndex) => ({
+      key: `guide-${itemIndex}`,
+      productName: `${item.productName} ×${item.quantity}`,
+      description: item.description
+    }))
+    .filter((guide) => Boolean(guide.description))
+)
+
 /** 全部勾完才允许确认出餐；无规格明细时视为已勾完，避免无谓卡死 */
 const checklistAllChecked = computed(
   () => checklistLines.value.length === 0 || checkedKeys.value.length >= checklistLines.value.length
@@ -623,6 +639,13 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <p v-if="checklist.remark" class="checklist-remark">备注：{{ checklist.remark }}</p>
+        <!-- 制作指引（T60）：店长的商品描述，出餐时按它做；无描述的商品不显示 -->
+        <div v-if="checklistGuides.length" class="checklist-guides">
+          <div v-for="guide in checklistGuides" :key="guide.key" class="guide-item">
+            <span class="guide-title">{{ guide.productName }}</span>
+            <span class="guide-text">{{ guide.description }}</span>
+          </div>
+        </div>
         <el-checkbox-group v-model="checkedKeys" class="checklist-body">
           <el-checkbox v-for="line in checklistLines" :key="line.key" :label="line.key">
             {{ line.text }}
@@ -693,6 +716,36 @@ onBeforeUnmount(() => {
 .checklist-remark {
   margin: 0 0 var(--gap-2);
   font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+/* 制作指引（T60）：与规格勾选区分开——说明性文本，不参与勾选 */
+.checklist-guides {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  max-height: 160px;
+  margin-bottom: var(--gap-3);
+  padding: var(--gap-2);
+  overflow-y: auto;
+  background: var(--brand-050);
+  border-radius: var(--radius-md);
+}
+
+.guide-item {
+  display: flex;
+  gap: var(--gap-2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.guide-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.guide-text {
   color: var(--text-2);
 }
 

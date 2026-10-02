@@ -37,8 +37,13 @@ public record OrderChecklistVo(
      * @param productName 商品名（下单时快照）
      * @param quantity    数量（杯数）
      * @param options     规格明细（按快照原序，含加料）
+     * @param description 制作指引（T60，W22）：<b>当前</b> {@code product.description}。
+     *                    与商品名 / 规格不同，描述<b>不是快照</b>——商品改描述后历史订单
+     *                    也会看到新描述，这是刻意取舍：SOP 需随做法演进而更新，冻结反而会让
+     *                    店员照着过期做法做（任务卡「真店期招人后零成本获得培训材料」）。
+     *                    商品已删除时为 {@code null}。
      */
-    public record Item(String productName, int quantity, List<OptionLine> options) {
+    public record Item(String productName, int quantity, List<OptionLine> options, String description) {
     }
 
     /**

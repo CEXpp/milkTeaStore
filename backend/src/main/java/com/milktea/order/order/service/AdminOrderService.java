@@ -18,6 +18,8 @@ import com.milktea.order.order.vo.BoardPreparingCardVo;
 import com.milktea.order.order.vo.BoardTodayVo;
 import com.milktea.order.order.vo.BoardVo;
 import com.milktea.order.order.vo.OrderChecklistVo;
+import com.milktea.order.product.entity.Product;
+import com.milktea.order.product.mapper.ProductMapper;
 import com.milktea.order.shop.service.SlaSettingsService;
 import com.milktea.order.shop.vo.SlaSettingsVo;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -77,6 +80,7 @@ public class AdminOrderService {
     private final OrderItemMapper orderItemMapper;
     private final OrderEventPublisher eventPublisher;
     private final SlaSettingsService slaSettingsService;
+    private final ProductMapper productMapper;
 
     /**
      * 看板全量查询（3 秒轮询）：双分区卡片 + 今日概览四数。
@@ -268,6 +272,10 @@ public class AdminOrderService {
      * <p>规格明细直接取自 {@code order_item.options_snapshot}，<b>不经过任何摘要字符串拼接</b>，
      * 因此不会「漏掉加料」（验收项「清单与快照完全一致」）。</p>
      *
+     * <p><b>制作指引（T60，W22）</b>：每个订单项附带<b>当前</b> {@code product.description}——
+     * 店长写在这里的要点即出餐 SOP。与商品名 / 规格的快照不同，描述刻意<b>不冻结</b>：
+     * SOP 要随做法演进而更新。商品已删除时为 {@code null}（不抛错，历史单照样能核对规格）。</p>
+     *
      * @throws BusinessException 1004 订单不存在
      */
     public OrderChecklistVo checklist(Long orderId) {
@@ -279,15 +287,42 @@ public class AdminOrderService {
                 .eq(OrderItem::getOrderId, orderId)
                 .orderByAsc(OrderItem::getId));
 
+        // 一次批量取本单涉及的商品描述，避免逐项 selectById 的 N+1
+        Map<Long, String> descriptions = loadDescriptions(items);
+
         List<OrderChecklistVo.Item> itemVos = new ArrayList<>(items.size());
         for (OrderItem item : items) {
             itemVos.add(new OrderChecklistVo.Item(
                     item.getProductName(),
                     item.getQuantity() == null ? 0 : item.getQuantity(),
-                    optionLines(item.getOptionsSnapshot())));
+                    optionLines(item.getOptionsSnapshot()),
+                    descriptions.get(item.getProductId())));
         }
         return new OrderChecklistVo(orderId, order.getOrderNo(), order.getPickupCode(), order.getSource(),
                 order.getRemark(), countRemarkTags(order.getRemarkTags()), itemVos);
+    }
+
+    /**
+     * 批量取商品描述（T60）：{@code productId → description}。
+     *
+     * <p>只取描述、不取状态与价格——本单已支付，商品此刻上下架或改价都与「这杯怎么做」无关，
+     * 更不能反向影响订单项上的金额快照（6.3 价格不回溯）。</p>
+     */
+    private Map<Long, String> loadDescriptions(List<OrderItem> items) {
+        Set<Long> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> result = new HashMap<>();
+        for (Product product : productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .select(Product::getId, Product::getDescription)
+                .in(Product::getId, productIds))) {
+            result.put(product.getId(), product.getDescription());
+        }
+        return result;
     }
 
     /** 规格快照 → 逐行规格（保留分组名，前端据此把「加料」等易漏项标出来）。 */
