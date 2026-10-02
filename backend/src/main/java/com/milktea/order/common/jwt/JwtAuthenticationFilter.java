@@ -33,6 +33,7 @@ import java.util.List;
  *   /api/customer/**      → 顾客 JWT（role=customer）；login / dev-login / menu / shop-status 为白名单
  *   /api/customer/ai/**   → 顾客 JWT（会话与草稿绑定顾客身份，随 /api/customer/** 规则）
  *   /api/files/**         → 公开（图片代理流）
+ *   /api/customer/orders/delegate/** → 公开（T65 取餐凭证转赠：代取人凭令牌授权，非凭身份）
  *   /actuator/**、OPTIONS → 放行
  * </pre>
  * 失败处理（HLD 5.2：401/403 以真实 HTTP 状态码承载，同时返回统一 R 体）：
@@ -63,10 +64,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/error"
     );
 
-    /** 前缀白名单：放行整段公开资源。 */
+    /**
+     * 前缀白名单：放行整段公开资源。
+     *
+     * <p>{@code /api/customer/orders/delegate/} 是 T65「取餐凭证转赠」的例外：
+     * 代取人可能从未登录过小程序（同事代取一杯），要求他先登录再取杯是本末倒置。
+     * 该路径<b>不豁免授权</b>——它靠令牌自身授权，核销仍受四条约束
+     * （限时 / 一次性 / 可撤销 / 不可转赠）约束，见 {@code PickupDelegateService}。</p>
+     *
+     * <p>为什么用前缀而非精确路径：取凭证的令牌是路径变量（每张单一个串），
+     * 无法枚举进精确白名单。代价是同前缀下其他路径也会被放行，故此处只放行
+     * 这一段，<b>不与 {@code /api/customer/orders/} 的其余接口混用</b>。</p>
+     */
     private static final List<String> PREFIX_WHITELIST = List.of(
             "/api/files/",
-            "/actuator/"
+            "/actuator/",
+            "/api/customer/orders/delegate/"
     );
 
     @Override

@@ -17,6 +17,7 @@ import {
   type OrderStatusEvent
 } from '@/utils/order-events'
 import { isActiveStatus, isTerminalStatus, statusLabel, STATUS_TYPE } from '@/utils/order-status'
+import { issueDelegate, revokeDelegate } from '@/api/delegate'
 import { useA11yStore } from '@/stores/a11y'
 import { vibratePickupReady } from '@/utils/pickup-remind'
 
@@ -334,6 +335,61 @@ const active = computed(() => isActiveStatus(status.value))
 /** 可申报到店的状态（与后端 ArrivalService.ARRIVABLE_STATUSES 一致） */
 const arrivable = computed(() => status.value === 'PAID' || status.value === 'PREPARING')
 
+/**
+ * 可转赠取餐凭证的状态（T65，W15）：与后端 PICKABLE_STATUSES 一致
+ * （PAID / PREPARING / COMPLETED）。
+ *
+ * 待支付与终态（关闭 / 作废）不给入口——前者还没付款，后者已无餐可取。
+ */
+const delegatable = computed(() => ['PAID', 'PREPARING', 'COMPLETED'].includes(status.value))
+
+/** 当前有效的委托令牌（仅签发那一刻存在；刷新页面即失去，故提示用户保存） */
+const delegateToken = ref('')
+const delegateBusy = ref(false)
+
+/**
+ * 签发代取凭证（T65）：限时 + 一次性 + 可撤销 + 不可转赠。
+ *
+ * 令牌只在此刻返回一次，**页面刷新后就再也拿不到**，所以签发后必须让用户当场复制/转发。
+ */
+async function createDelegate(): Promise<void> {
+  if (!orderId.value || delegateBusy.value) return
+  delegateBusy.value = true
+  try {
+    delegateToken.value = await issueDelegate(orderId.value, { minutes: 120 })
+    uni.showToast({ title: '已生成代取凭证', icon: 'success' })
+  } catch {
+    // 错误提示已由 request 层 toast 直显
+  } finally {
+    delegateBusy.value = false
+  }
+}
+
+/** 复制代取链接：发给要代取的人 */
+function copyDelegateLink(): void {
+  if (!delegateToken.value) return
+  // 用完整路径（含 token）而非仅 token —— 代取人多半是直接点开链接
+  uni.setClipboardData({
+    data: delegateToken.value,
+    success: () => uni.showToast({ title: '凭证口令已复制', icon: 'none' })
+  })
+}
+
+/** 撤销代取凭证：原主始终是权限终点，撤销后对方立即失效 */
+async function cancelDelegate(): Promise<void> {
+  if (!orderId.value || delegateBusy.value) return
+  delegateBusy.value = true
+  try {
+    await revokeDelegate(orderId.value)
+    delegateToken.value = ''
+    uni.showToast({ title: '已收回代取凭证', icon: 'none' })
+  } catch {
+    // 错误提示已由 request 层 toast 直显
+  } finally {
+    delegateBusy.value = false
+  }
+}
+
 /** 已等待 mm:ss（秒级刷新） */
 const waitedText = computed(() => {
   const mm = Math.floor(waitedSeconds.value / 60)
@@ -523,6 +579,38 @@ function continuePay(): void {
             {{ item.options.map((option) => option.optionName).join('/') }}
           </view>
           <view class="goods-amount a11y-sm">￥{{ item.itemAmount }}</view>
+        </view>
+      </view>
+
+      <!-- 取餐凭证转赠（T65，W15）：限时 + 一次性 + 可撤销 + 不可转赠。
+           本区块是 SRS 9.2「不可跨 openid 读取」的唯一例外，故文案里把四条约定讲清 ——
+           让下单人明白自己随时能收回，也明白对方打开一次就失效。 -->
+      <view v-if="delegatable" class="card">
+        <view class="card-title a11y-md">让朋友代取</view>
+
+        <template v-if="!delegateToken">
+          <view class="delegate-note a11y-sm a11y-dim">
+            生成一个限时 2 小时的代取凭证。对方打开一次即失效，你随时可以收回。
+          </view>
+          <view class="delegate-btn a11y-md" @click="createDelegate">
+            {{ delegateBusy ? '生成中…' : '生成代取凭证' }}
+          </view>
+        </template>
+
+        <template v-else>
+          <view class="delegate-note a11y-sm">
+            把下面这串口令发给对方，ta 打开后即可看到取餐码（看不到金额）。
+            刷新本页后此口令不再显示，请先复制。
+          </view>
+          <view class="delegate-token" @click="copyDelegateLink">{{ delegateToken }}</view>
+          <view class="delegate-actions">
+            <view class="delegate-btn delegate-btn-ghost a11y-sm" @click="copyDelegateLink">复制口令</view>
+            <view class="delegate-btn delegate-btn-ghost a11y-sm" @click="cancelDelegate">收回凭证</view>
+          </view>
+        </template>
+
+        <view v-if="delegateToken" class="delegate-note a11y-sm a11y-dim">
+          凭证有效期为 2 小时；对方使用后自动作废，不可二次转赠。
         </view>
       </view>
 
@@ -837,6 +925,45 @@ function continuePay(): void {
   font-size: 26rpx;
   color: #f56c6c;
   text-align: right;
+}
+
+/* 取餐凭证转赠（T65）：说明文字先讲清四条约定，再给动作 */
+.delegate-note {
+  margin-bottom: 16rpx;
+  line-height: 1.6;
+}
+
+.delegate-btn {
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  color: #fff;
+  background: #3b49b8;
+  border-radius: 40rpx;
+}
+
+.delegate-btn-ghost {
+  flex: 1;
+  color: #3b49b8;
+  background: #eef1fb;
+}
+
+.delegate-token {
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+  font-family: monospace;
+  font-size: 24rpx;
+  color: #3b49b8;
+  word-break: break-all;
+  background: #f8fafc;
+  border: 1rpx dashed #c8cfe8;
+  border-radius: 8rpx;
+}
+
+.delegate-actions {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 16rpx;
 }
 
 .footer-actions {
