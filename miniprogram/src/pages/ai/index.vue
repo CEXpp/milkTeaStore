@@ -12,8 +12,11 @@ import {
   type AiFallback
 } from '@/api/ai'
 import { payOrder } from '@/api/order'
+import { getMenu, type MenuProduct } from '@/api/menu'
 import { ApiError } from '@/utils/request'
+import { buildSpeechText } from '@/utils/speech'
 import { useA11yStore } from '@/stores/a11y'
+import { useSpeechStore } from '@/stores/speech'
 import MessageBubble from '@/components/ai/MessageBubble.vue'
 import DraftCard from '@/components/ai/DraftCard.vue'
 
@@ -46,6 +49,10 @@ interface ChatMessage {
 }
 
 const a11y = useA11yStore()
+/** 语音播报开关（T70）：输出侧 TTS，不涉及输入侧 ASR（见 utils/speech.ts 的边界说明） */
+const speech = useSpeechStore()
+/** 在售商品（扁平）：规格纠错用（T71） */
+const menuProducts = ref<MenuProduct[]>([])
 
 const messages = ref<ChatMessage[]>([])
 const input = ref('')
@@ -62,10 +69,27 @@ let sequence = 0
 const showExamples = computed(() => messages.value.filter((item) => item.role === 'user').length === 0)
 
 onShow(() => {
+  // 语音播报能力探测（T70）：进页探一次即可，不在每轮对话里重复探测
+  speech.init()
+  // 规格纠错需要「有哪些规格可选」，进页拉一次菜单即可
+  void loadMenuForSpec()
   if (messages.value.length === 0) {
     appendMessage({ role: 'assistant', text: WELCOME })
   }
 })
+
+/** 在售商品（扁平化）：供草稿卡按名称反查规格组与可选项（T71）。失败静默，只影响纠错入口。 */
+async function loadMenuForSpec(): Promise<void> {
+  if (menuProducts.value.length) {
+    return
+  }
+  try {
+    const menu = await getMenu()
+    menuProducts.value = menu.categories.flatMap((category) => category.products)
+  } catch {
+    menuProducts.value = []
+  }
+}
 
 function appendMessage(message: Omit<ChatMessage, 'id'>): void {
   sequence += 1
@@ -101,6 +125,11 @@ async function send(preset?: string): Promise<void> {
     }
     sessionId.value = result.sessionId
     appendMessage({ role: 'assistant', text: result.text, draft: result.draft })
+    // 语音播报（T70）：只在 CARD（草稿算出来了）时播报，且金额直接取后端的
+    // draft.totalAmount —— 播报内容与卡片同源，不会出现「念的金额和显示的不一样」
+    if (result.replyType === 'CARD' && result.draft) {
+      speech.say(buildSpeechText(result.draft))
+    }
   } catch (error) {
     handleChatError(error)
   } finally {
@@ -150,6 +179,20 @@ function handleRemove(item: AiDraftItem): void {
 }
 
 /**
+ * 规格就地纠正（T71）：点一下规格组选了新值 → 翻译成一句指令。
+ *
+ * <p>刻意<b>不发新会话</b>：走的就是同一个 chat 通道（sessionId 原样带上），
+ * 后端会话里的草稿被工具改写后回传新的 CARD——与行内改数量完全同构。
+ * 不新增任何订单入口，也不在本地改草稿（本地改会让卡片金额与服务端草稿不一致）。</p>
+ */
+function handleSpecChange(item: AiDraftItem, groupName: string, optionName: string): void {
+  if (sending.value) {
+    return
+  }
+  void send(`把「${item.productName}」的${groupName}改成${optionName}`)
+}
+
+/**
  * 立即支付：confirm-order 转正式订单 → 立刻连发 pay 完成支付闭环 → 跳订单详情页。
  *
  * AI 侧没有支付工具，这一步必须由用户点按触发（SRS 约束三原则第三条）。
@@ -193,8 +236,10 @@ async function handlePay(): Promise<void> {
           v-if="message.draft"
           :draft="message.draft"
           :busy="sending || paying"
+          :products="menuProducts"
           @change="handleAdjust"
           @remove="handleRemove"
+          @spec-change="handleSpecChange"
           @pay="handlePay"
         />
       </view>
@@ -224,6 +269,18 @@ async function handlePay(): Promise<void> {
           ? '无障碍模式：全程可用键盘麦克风语音点单，无需手动打字'
           : '可按键盘上的麦克风说话，语音会自动转成文字'
       }}
+    </view>
+
+    <!-- 语音播报开关（T70，输出侧）：只在环境具备 TTS 能力时出现。
+         刻意与上面那行「输入侧」提示分开：一个是「你说」，一个是「它念」，
+         混在一处会让人以为播报开关能控制麦克风。 -->
+    <view v-if="speech.available" class="speech-bar" @tap="speech.toggle()">
+      <view class="speech-text a11y-sm">
+        {{ speech.enabled ? 'AI 解析完成后会念出订单内容' : '语音播报已关闭' }}
+      </view>
+      <view class="speech-switch" :class="{ 'speech-switch-on': speech.enabled }">
+        <view class="speech-switch-dot" />
+      </view>
     </view>
   </view>
 </template>
@@ -331,5 +388,47 @@ async function handlePay(): Promise<void> {
   font-size: 22rpx;
   color: #c0c4cc;
   text-align: center;
+}
+
+/* 语音播报开关（T70）：复用 T45 无障碍开关的视觉语言，让用户一眼认得这是同类开关 */
+.speech-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 24rpx 24rpx;
+  background: #fff;
+}
+
+.speech-text {
+  color: #909399;
+}
+
+.speech-switch {
+  display: flex;
+  align-items: center;
+  width: 84rpx;
+  height: 44rpx;
+  padding: 4rpx;
+  background: #e4e7ed;
+  border-radius: 22rpx;
+  transition: background-color 0.2s;
+}
+
+.speech-switch-dot {
+  width: 36rpx;
+  height: 36rpx;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s;
+}
+
+.speech-switch-on {
+  background: #409eff;
+}
+
+.speech-switch-on .speech-switch-dot {
+  transform: translateX(40rpx);
 }
 </style>

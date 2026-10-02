@@ -12,9 +12,14 @@ import org.springframework.util.StringUtils;
 /**
  * 门店配置写入服务（T23）：{@code shop_config} KV 表的 upsert 入口。
  *
- * <p>当前仅承载「暂停接单」开关（LLD 3.5.5）：写 paused / notice 两个键。
+ * <p>承载两个键：{@code paused}（暂停接单开关，T23）与{@code notice}（营业公告，T62）。
  * 读链路仍在 {@code MenuService}（顾客端菜单与 shop-status 共用同一份配置），
  * 本服务只负责写，避免读写语义混淆。</p>
+ *
+ * <p><b>{@code notice} 的语义在 T62 收口</b>：此前它只是「暂停时自动写入的提示语」，
+ * 现在升级为<b>面向顾客的营业公告</b>（「今日售罄」「新品上市」「预计 X 点恢复」），
+ * 暂停只是公告的一种用法。因此 {@link #updatePause} <b>不再自动写入提示语</b>——
+ * 否则店长刚写好的公告会被切一次开关就覆盖掉。暂停的原因由店长自行写进公告。</p>
  */
 @Slf4j
 @Service
@@ -23,13 +28,17 @@ public class ShopConfigService {
 
     /** 暂停接单开关的配置键 */
     public static final String KEY_PAUSED = "paused";
-    /** 顾客端暂停提示语的配置键 */
+    /** 顾客端营业公告的配置键（T62：可独立发布与撤下） */
     public static final String KEY_NOTICE = "notice";
 
     private final ShopConfigMapper shopConfigMapper;
 
     /**
-     * 设置暂停接单开关；notice 非空时同步更新提示语（空则保留原提示语）。
+     * 设置暂停接单开关。
+     *
+     * <p>T62 起<b>不再自动写入 notice</b>：公告改为店长自主维护的独立字段，
+     * 切开关不应覆盖它。仅当请求显式带了 notice 时才同步（保留既有接口的向后兼容，
+     * 供将来「按公告说明暂停原因」的用法）。</p>
      *
      * @return 写入后的暂停状态
      */
@@ -39,8 +48,26 @@ public class ShopConfigService {
         if (StringUtils.hasText(notice)) {
             upsert(KEY_NOTICE, notice.trim());
         }
-        log.info("[T23] shop pause updated paused={} notice={}", paused, notice);
+        log.info("[T62] shop pause updated paused={} noticeOverwritten={}", paused, StringUtils.hasText(notice));
         return paused;
+    }
+
+    /**
+     * 发布 / 撤下营业公告（T62，v1 底座 F06）。
+     *
+     * <p><b>撤下即写空串</b>而不是删键：{@code shop_config} 是 KV 表，删键会让
+     * 「没配过」与「配了又撤下」两种状态都表现为缺行；写空串则读写语义都稳定，
+     * 且读取侧统一把空白归一化为 {@code null}（见 MenuService.getShopStatus）。</p>
+     *
+     * @param rawNotice 公告正文；null / 空串 / 纯空白均视为撤下
+     * @return 归一化后的公告（撤下时为 {@code null}）
+     */
+    @Transactional
+    public String updateNotice(String rawNotice) {
+        String normalized = StringUtils.hasText(rawNotice) ? rawNotice.trim() : "";
+        upsert(KEY_NOTICE, normalized);
+        log.info("[T62] shop notice updated length={} cleared={}", normalized.length(), normalized.isEmpty());
+        return normalized.isEmpty() ? null : normalized;
     }
 
     /**

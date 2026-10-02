@@ -37,6 +37,15 @@ public class OrderItem {
 
     private Integer quantity;
 
+    /**
+     * 拼单成员标识（T63，V3 已加列但此前未映射；W13/W14 团单履约）。
+     *
+     * <p>形如「003 王工」，由参与者在拼单池自填，<b>只在本单与本行流转</b>——
+     * 不写入 customer 表、不进任何画像或推荐计算（任务卡隐私纪律）。
+     * 非拼单单据恒为 {@code null}。</p>
+     */
+    private String memberTag;
+
     /** 快照单价 = 基础价 + Σ 价差 */
     private BigDecimal unitPrice;
 

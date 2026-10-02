@@ -1,10 +1,12 @@
 package com.milktea.order.shop.controller;
 
 import com.milktea.order.common.result.R;
+import com.milktea.order.shop.dto.ShopNoticeRequest;
 import com.milktea.order.shop.dto.ShopPauseRequest;
 import com.milktea.order.shop.dto.SlaSettingsRequest;
 import com.milktea.order.shop.service.ShopConfigService;
 import com.milktea.order.shop.service.SlaSettingsService;
+import com.milktea.order.shop.vo.ShopNoticeVo;
 import com.milktea.order.shop.vo.ShopPauseVo;
 import com.milktea.order.shop.vo.SlaSettingsVo;
 import jakarta.validation.Valid;
@@ -20,6 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@code PUT /api/admin/shop/pause}：开启后顾客端下单接口返回 1006，
  * 顾客端菜单 / shop-status 的 paused 变为 true；<b>进行中订单不受影响</b>——
  * 看板、状态流转与出餐照常（暂停只在「下单」入口拦截，见 OrderService）。</p>
+ *
+ * <p>{@code PUT /api/admin/shop/notice}（T62）：发布 / 撤下营业公告（限 60 字）。
+ * 与暂停开关<b>解耦</b>：切开关不再覆盖公告，公告由店长自主维护。</p>
  */
 @RestController
 @RequestMapping("/api/admin/shop")
@@ -45,5 +50,16 @@ public class AdminShopController {
     @PutMapping("/sla")
     public R<SlaSettingsVo> sla(@RequestBody SlaSettingsRequest request) {
         return R.ok(slaSettingsService.update(request.warnSeconds(), request.dangerSeconds()));
+    }
+
+    /**
+     * 发布 / 撤下营业公告（T62，v1 底座 F06）：body {@code {notice}}，限 60 字。
+     *
+     * <p>传空串或 null 即撤下。响应回<b>归一化后</b>的公告（撤下时为 {@code null}），
+     * 前端据此直接回填输入框，不必再猜「我发的是空还是它存成了空」。</p>
+     */
+    @PutMapping("/notice")
+    public R<ShopNoticeVo> notice(@RequestBody ShopNoticeRequest request) {
+        return R.ok(new ShopNoticeVo(shopConfigService.updateNotice(request.notice())));
     }
 }

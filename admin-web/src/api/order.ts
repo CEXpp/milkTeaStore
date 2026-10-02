@@ -139,6 +139,19 @@ export interface OrderChecklistItem {
   productName: string
   quantity: number
   options: OrderChecklistOption[]
+  /**
+   * 团单成员标识（T64/W14，如「003 王工」）；非团单为 null。
+   *
+   * 为 null 时前端不渲染任何标签——单人单界面与引入团单前完全一致（零干扰）。
+   */
+  memberTag: string | null
+  /**
+   * 制作指引（T60，W22）：当前 `product.description`，店长写在这里的要点即出餐 SOP。
+   *
+   * **不是快照**：与商品名/规格不同，描述取的是商品当前值——商品改描述后历史订单也会看到
+   * 新描述。这是刻意取舍，SOP 需随做法演进而更新。商品已删除时为 null。
+   */
+  description: string | null
 }
 
 /** GET /api/admin/orders/{id}/checklist 响应 data（T58，W20） */

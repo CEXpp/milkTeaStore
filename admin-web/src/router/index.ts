@@ -56,6 +56,18 @@ const routes: RouteRecordRaw[] = [
         name: 'stats',
         component: () => import('@/views/Stats.vue'),
         meta: { title: '账台统计', keepAlive: true }
+      },
+      {
+        path: 'archives',
+        name: 'archives',
+        component: () => import('@/views/BrewArchives.vue'),
+        meta: { title: '制作档案' }
+      },
+      {
+        path: 'copilot',
+        name: 'copilot',
+        component: () => import('@/views/Copilot.vue'),
+        meta: { title: '经营参谋', keepAlive: true }
       }
     ]
   },

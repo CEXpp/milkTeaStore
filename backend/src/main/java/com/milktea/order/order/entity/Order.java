@@ -108,6 +108,18 @@ public class Order {
      */
     private LocalDateTime arrivedAt;
 
+    /**
+     * 拼单关联（T63，V3 加列；W13拼单）。
+     *
+     * <p>指向 {@code group_cart.id}，非拼单单据恒为 {@code null}。存在的意义是<b>双向可查</b>：
+     * 订单侧能回答「这单来自哪个池」（T64 团单履约据此判定是否显示成员标签），
+     * 池侧也有 {@code group_cart.order_id}。</p>
+     *
+     * <p>刻意<b>不参与</b>状态机、超时关单与统计口径——团单在系统里就是一张普通订单，
+     * 只是订单项上多了成员标识。</p>
+     */
+    private Long groupId;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -6,10 +6,13 @@ import com.milktea.order.common.exception.BusinessException;
 import com.milktea.order.common.exception.ErrorCode;
 import com.milktea.order.common.jwt.AuthContext;
 import com.milktea.order.common.util.MoneyUtils;
+import com.milktea.order.group.entity.GroupCart;
 import com.milktea.order.order.dto.OrderCreateRequest;
 import com.milktea.order.order.dto.OptionSnapshot;
+import com.milktea.order.order.dto.OrderItemRequest;
 import com.milktea.order.order.dto.PricedItem;
 import com.milktea.order.order.dto.PricingResult;
+import com.milktea.order.order.dto.TaggedItemRequest;
 import com.milktea.order.order.entity.Order;
 import com.milktea.order.order.entity.OrderItem;
 import com.milktea.order.order.entity.OrderStatus;
@@ -235,9 +238,76 @@ public class OrderService {
         return PayVo.from(paid);
     }
 
-    /**
-     * 门店暂停接单校验（LLD 3.2 → 1006）。
-     */
+/**
+     * 拼单转正式单（T63，A5 · W13）：冻结的拼单池 → 一张 PENDING_PAYMENT 订单。
+ *
+ * * <p><b>只建单、不支付</b>：支付由调用方紧接着调 {@link #pay(Long, Long)} 完成，
+ * * 二者同处一个事务——这样「建单成功但支付失败」不会留下孤儿订单。</p>
+ *
+ * * <p><b>一个取餐码 + N 个订单项</b>：取餐码在支付时经 {@link SequenceService} 分配，
+ * * 规则与普通单完全一致（6.2 当日流水）；团单只是「多个订单项共用一个码」，
+ * * <b>不改动流水规则本身</b>（T64 验收项）。</p>
+ *
+ * * <p><b>渠道取 MINI_PROGRAM</b>：拼单来自小程序，不新增第四个渠道值——
+ * * 否则 6.5 统计的渠道结构会与所有历史报表失配。</p>
+ *
+ * * <p><b>成员标识</b>：写入 {@code order_item.member_tag}，只在订单域内流转，
+ * * 不写 customer 表、不进画像（T63 隐私纪律）。</p>
+ *
+ * * @param tagged 展平后的成员选品（金额一律现算，池里存的只是 productId 与规格）
+ * @param groupCart 拼单池（用于写 {@code orders.group_id} 建立双向可查）
+ * @return 新订单 id
+ */
+@Transactional(rollbackFor = Exception.class)
+public Long createGroupOrder(List<TaggedItemRequest> tagged, GroupCart groupCart) {
+    checkShopOpen();
+
+    // 实时计价：商品下架 / 规格非法在此抛出 1002 / 1003 / 1001，绝不接受池里存的价格
+    List<OrderItemRequest> plainItems = new ArrayList<>(tagged.size());
+    for (TaggedItemRequest entry : tagged) {
+        plainItems.add(entry.item());
+    }
+    PricingResult priced = pricingService.calculatePrice(plainItems);
+
+    // 订单号统一由 T11 SequenceService 发放（同事务内取号）
+    String orderNo = sequenceService.nextOrderNo();
+    LocalDateTime now = LocalDateTime.now();
+
+    Order order = new Order();
+    order.setOrderNo(orderNo);
+    order.setSource(Order.SOURCE_MINI_PROGRAM);
+    order.setStatus(OrderStatus.PENDING_PAYMENT.name());
+    order.setCustomerId(groupCart.getOwnerId());
+    order.setTotalAmount(priced.getTotalAmount());
+    order.setRemark(null);
+    order.setGroupId(groupCart.getId());
+    order.setCreatedAt(now);
+    order.setUpdatedAt(now);
+    orderMapper.insert(order);
+
+    // 计价结果的顺序与入参一致，故可按下标把成员标识贴回对应的订单项
+    for (int i = 0; i < priced.getItems().size(); i++) {
+        PricedItem pi = priced.getItems().get(i);
+        OrderItem oi = new OrderItem();
+        oi.setOrderId(order.getId());
+        oi.setProductId(pi.getProductId());
+        oi.setProductName(pi.getProductName());
+        oi.setBasePrice(pi.getBasePrice());
+        oi.setOptionsSnapshot(snapshotJson(pi.getOptions()));
+        oi.setQuantity(pi.getQuantity());
+        oi.setMemberTag(tagged.get(i).memberTag());
+        oi.setUnitPrice(pi.getUnitPrice());
+        oi.setItemAmount(pi.getItemAmount());
+        orderItemMapper.insert(oi);
+    }
+    log.info("[T63] group order created orderId={} orderNo={} groupUuid={} items={}",
+            order.getId(), orderNo, groupCart.getGroupUuid(), priced.getItems().size());
+    return order.getId();
+}
+
+/**
+ * 门店暂停接单校验（LLD 3.2 → 1006）。
+ */
     private void checkShopOpen() {
         ShopConfig config = shopConfigMapper.selectOne(new LambdaQueryWrapper<ShopConfig>()
                 .eq(ShopConfig::getConfigKey, CONFIG_PAUSED));

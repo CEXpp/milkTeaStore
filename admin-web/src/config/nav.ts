@@ -1,4 +1,4 @@
-import { DataAnalysis, Goods, Grid, PriceTag, Shop, Tickets } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Goods, Grid, Notebook, PriceTag, Shop, Tickets } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 
 /**
@@ -40,7 +40,11 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: '经营数据',
-    items: [{ title: '账台统计', path: '/stats', icon: DataAnalysis, desc: '营业额、销量与流水对账' }]
+    items: [
+      { title: '账台统计', path: '/stats', icon: DataAnalysis, desc: '营业额、销量与流水对账' },
+      { title: '制作档案', path: '/archives', icon: Notebook, desc: '逐杯追溯规格快照与全流程时间戳' },
+      { title: '经营参谋', path: '/copilot', icon: ChatDotRound, desc: '用自然语言问经营数据（只读）' }
+    ]
   }
 ]
 

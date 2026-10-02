@@ -203,8 +203,10 @@ async function submit(): Promise<void> {
           :rows="2"
           maxlength="255"
           show-word-limit
-          placeholder="选填，展示在菜单商品名下方"
+          placeholder="选填，顾客端展示在商品名下方；商家端出餐时作为制作指引"
         />
+        <!-- T60（W22）：描述同时面向双端，此处明说避免店长误写内部话术给顾客看 -->
+        <span class="unit">顾客端会看到这段文字，请勿写内部话术；制作要点会出现在店员的出餐核对弹窗</span>
       </el-form-item>
 
       <el-form-item label="商品图片">

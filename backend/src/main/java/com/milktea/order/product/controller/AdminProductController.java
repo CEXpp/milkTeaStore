@@ -2,11 +2,14 @@ package com.milktea.order.product.controller;
 
 import com.milktea.order.common.result.PageResult;
 import com.milktea.order.common.result.R;
+import com.milktea.order.product.dto.ProductBatchStatusRequest;
+import com.milktea.order.product.dto.ProductCategoryStatusRequest;
 import com.milktea.order.product.dto.ProductSaveRequest;
 import com.milktea.order.product.dto.ProductSpecGroupRequest;
 import com.milktea.order.product.dto.ProductStatusRequest;
 import com.milktea.order.product.service.AdminProductService;
 import com.milktea.order.product.vo.AdminProductVo;
+import com.milktea.order.product.vo.ProductBatchStatusVo;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code POST /api/admin/products}：新建；</li>
  *   <li>{@code PUT /api/admin/products/{id}}：编辑；</li>
  *   <li>{@code PUT /api/admin/products/{id}/status}：上下架（body {status: 0|1}）；</li>
- *   <li>{@code PUT /api/admin/products/{id}/spec-groups}：设置适用规格组（body {groupIds: []}，全量覆盖）。</li>
+ *   <li>{@code PUT /api/admin/products/{id}/spec-groups}：设置适用规格组（body {groupIds: []}，全量覆盖）；</li>
+ *   <li>{@code PUT /api/admin/products/batch-status}：批量上下架（T61，body {status, productIds}）；</li>
+ *   <li>{@code PUT /api/admin/products/category-status}：分类级一键估清（T61，body {categoryId, status}）。</li>
  * </ul>
  */
 @RestController
@@ -72,5 +77,27 @@ public class AdminProductController {
                                  @Valid @RequestBody ProductSpecGroupRequest request) {
         adminProductService.setSpecGroups(id, request.getGroupIds());
         return R.ok(null);
+    }
+
+    /**
+     * 批量上下架（T61，F07）：列表页多选后一次生效（body {status: 0|1, productIds: []}）。
+     *
+     * <p>「估清」在本系统即批量下架——不引入库存字段（11 章既有决策）。返回实际受影响条数，
+     * 便于界面显示「已下架 N / 选中 M」，避免半生效被误认为全成功。</p>
+     */
+    @PutMapping("/products/batch-status")
+    public R<ProductBatchStatusVo> updateStatusBatch(@Valid @RequestBody ProductBatchStatusRequest request) {
+        return R.ok(adminProductService.updateStatusBatch(request.productIds(), request.status()));
+    }
+
+    /**
+     * 分类级一键估清（T61，F07）：整类上下架（body {categoryId, status: 0|1}）。
+     *
+     * <p>不接受商品 id 子集——部分保留会让顾客仍能点到做不出来的商品，那正是估清要消除的体验损失。</p>
+     */
+    @PutMapping("/products/category-status")
+    public R<ProductBatchStatusVo.Category> updateCategoryStatus(
+            @Valid @RequestBody ProductCategoryStatusRequest request) {
+        return R.ok(adminProductService.updateCategoryStatus(request.categoryId(), request.status()));
     }
 }

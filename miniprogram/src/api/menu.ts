@@ -53,6 +53,12 @@ export interface MenuResult {
 /** GET /api/customer/shop-status 响应 data */
 export interface ShopStatus {
   paused: boolean
+  /**
+   * 营业公告（T62）：未发布 / 已撤下时为 null。
+   *
+   * 语义已由「暂停提示语」升级为「营业公告」——公告常态展示在菜单顶部，
+   * 暂停遮罩里的提示语也复用它。后端已归一化空白为 null。
+   */
   notice: string | null
 }
 
@@ -61,7 +67,7 @@ export function getMenu(): Promise<MenuResult> {
   return request<MenuResult>({ url: '/api/customer/menu' })
 }
 
-/** 门店营业状态（暂停接单遮罩的数据源） */
+/** 门店营业状态（营业公告条与暂停接单遮罩的数据源） */
 export function getShopStatus(): Promise<ShopStatus> {
   return request<ShopStatus>({ url: '/api/customer/shop-status' })
 }

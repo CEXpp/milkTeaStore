@@ -33,6 +33,22 @@
 			}
 		},
 		{
+			// 拼单页（T64，W13）：未带 uuid 进来则创建池，带 uuid 则加入；含冻结与结算。
+			// 非 Tab —— 从菜单页/我的订单页按需进入（与购物车同属页面栈跳转）
+			"path": "pages/group/index",
+			"style": {
+				"navigationBarTitleText": "拼单"
+			}
+		},
+		{
+			// 代取凭证页（T65，W15）：凭令牌进入的**公开页**，打开即核销（一次性）。
+			// 代取人可能从未登录过，故不依赖登录态；授权由 token 自身承担
+			"path": "pages/delegate/index",
+			"style": {
+				"navigationBarTitleText": "代取凭证"
+			}
+		},
+		{
 			"path": "pages/order-detail/index",
 			"style": {
 				"navigationBarTitleText": "订单详情"

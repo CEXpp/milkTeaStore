@@ -19,6 +19,8 @@ import { playDing, unlockDing } from '@/utils/ding'
 import { subscribeBoardEvents, type BoardEventSubscription } from '@/utils/order-events'
 import OrderCard from '@/components/board/OrderCard.vue'
 import StatBar from '@/components/board/StatBar.vue'
+import DailyReportCard from '@/components/board/DailyReportCard.vue'
+import ForecastBanner from '@/components/board/ForecastBanner.vue'
 
 /**
  * 订单看板（T19，LLD 3.5 / 7.3）：
@@ -50,8 +52,20 @@ const board = ref<OrderBoardResult | null>(null)
 /** 接单节奏建议（T48）：只读提示——超阈值仅「建议」暂停，系统绝不自动执行 */
 const pace = ref<QueuePace | null>(null)
 
+/**
+ * SLA 阈值的兜底值（T52）。
+ *
+ * <p>阈值本应由看板响应下发，但模板里有 `sla.warnSeconds` 这类直接取值——
+ * 一旦该值缺失就会在<b>渲染阶段</b>抛 TypeError，整个看板白屏，
+ * 连带 onMounted 里的轮询都发不出去（表现为「一个请求都没发」）。
+ * 阈值只影响卡片配色与置顶排序，缺了拿默认值顶着远比白屏好，故在此单点声明。</p>
+ */
+const DEFAULT_SLA: BoardSlaSettings = { warnSeconds: 300, dangerSeconds: 600 }
+
 /** SLA 阈值（T52）：随看板响应下发；单独存一份，避免受 board 的差量合并影响 */
-const sla = ref<BoardSlaSettings>({ warnSeconds: 300, dangerSeconds: 600 })
+const sla = ref<BoardSlaSettings>({ ...DEFAULT_SLA })
+/** 爆单预测横幅（T69）：由看板的既有轮询带着刷新，不额外起定时器 */
+const forecastBanner = ref<InstanceType<typeof ForecastBanner> | null>(null)
 /** 秒级时间戳：统一驱动各卡片的等待时长 mm:ss（卡片不各自起定时器） */
 const nowTs = ref(Date.now())
 let tickTimer: number | null = null
@@ -184,8 +198,13 @@ async function refreshBoard(): Promise<void> {
     }
     knownPendingIds = pendingIds
     pruneHighlight(now)
-    // SLA 阈值随响应下发（T52）：单独存一份，商家改阈值后下一次刷新立即生效
-    sla.value = data.sla
+    // SLA 阈值随响应下发（T52）：单独存一份，商家改阈值后下一次刷新立即生效。
+    //
+    // 用 `?? sla.value` 兜底：一旦后端某次没带这个字段，直接赋值会把它写成 undefined，
+    // 而模板里有 `sla.warnSeconds`——渲染阶段抛 TypeError 会让整个看板白屏，
+    // 连带 onMounted 里的轮询都发不出去（表现就是「一个请求都没发」）。
+    // 阈值只影响卡片配色与置顶排序，拿上一次的值顶着远比崩掉好。
+    sla.value = data.sla ?? sla.value
 
     const prev = board.value
     const pending = mergePending(data.pending)
@@ -208,9 +227,16 @@ async function refreshBoard(): Promise<void> {
     }
     // 顺带刷新接单节奏（T48）：失败静默，不污染看板主流程
     void loadPace()
+    // 顺带刷新爆单预测（T69）：与节奏同频；组件自己选「非正常才展示」，这里不做判断
+    void loadForecast()
   } catch {
     // 错误提示已由 request 层直显；下一个轮询周期自动重试
   }
+}
+
+/** 爆单预测（T69）：只读建议，刷新失败不打扰店长。 */
+async function loadForecast(): Promise<void> {
+  await forecastBanner.value?.load()
 }
 
 /** 接单节奏建议（T48）：只读展示，刷新失败不打扰店长。 */
@@ -257,10 +283,12 @@ async function saveSla(): Promise<void> {
   }
   slaSaving.value = true
   try {
-    sla.value = await updateSla({
-      warnSeconds: slaForm.warnSeconds,
-      dangerSeconds: slaForm.dangerSeconds
-    })
+    // 同上：保存接口的返回值缺失时保留原值，绝不把 sla 写成 undefined（否则整页白屏）
+    sla.value =
+      (await updateSla({
+        warnSeconds: slaForm.warnSeconds,
+        dangerSeconds: slaForm.dangerSeconds
+      })) ?? sla.value
     slaDialogVisible.value = false
     ElMessage.success('SLA 阈值已更新')
     void refreshBoard()
@@ -393,19 +421,41 @@ function handleStart(orderId: number): void {
   void runAction(orderId, () => startOrder(orderId), '已开始制作')
 }
 
-/** 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾 */
+/**
+ * 清单扁平行（T58）：每个订单项的每个规格一行，逐项可勾。
+ *
+ * memberTag（T64/W14）：团单时带上成员标识，出餐喊「003 王工」；
+ * 非团单为 null，模板里不渲染 —— 单人单界面与引入团单前完全一致（零干扰）。
+ */
 const checklistLines = computed(() => {
-  const lines: Array<{ key: string; text: string }> = []
+  const lines: Array<{ key: string; text: string; memberTag: string | null }> = []
   checklist.value?.items.forEach((item, itemIndex) => {
     item.options.forEach((option, optionIndex) => {
       lines.push({
         key: `${itemIndex}-${optionIndex}`,
-        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`
+        text: `${item.productName} ×${item.quantity} · ${option.groupName}：${option.optionName}`,
+        memberTag: item.memberTag
       })
     })
   })
   return lines
 })
+
+/**
+ * 制作指引（T60，W22）：按商品分组的当前描述，插在该商品规格行之上。
+ *
+ * 刻意与规格行分开呈现：规格是「本单要做什么」（快照，逐项打勾核对），
+ * 描述是「一直怎么做」（当前 SOP，说明性文本，不参与勾选）。
+ */
+const checklistGuides = computed(() =>
+  (checklist.value?.items ?? [])
+    .map((item, itemIndex) => ({
+      key: `guide-${itemIndex}`,
+      productName: `${item.productName} ×${item.quantity}`,
+      description: item.description
+    }))
+    .filter((guide) => Boolean(guide.description))
+)
 
 /** 全部勾完才允许确认出餐；无规格明细时视为已勾完，避免无谓卡死 */
 const checklistAllChecked = computed(
@@ -514,7 +564,8 @@ onBeforeUnmount(() => {
     <!-- SLA 预警阈值入口（T52）：阈值随看板响应下发，改完下一次刷新即生效 -->
     <div class="board-toolbar">
       <span class="toolbar-tip">
-        SLA 预警：{{ sla.warnSeconds }} 秒转黄 / {{ sla.dangerSeconds }} 秒转红并置顶
+        SLA 预警：{{ sla?.warnSeconds ?? DEFAULT_SLA.warnSeconds }} 秒转黄 /
+        {{ sla?.dangerSeconds ?? DEFAULT_SLA.dangerSeconds }} 秒转红并置顶
       </span>
       <el-button link type="primary" size="small" @click="openSlaDialog">修改阈值</el-button>
     </div>
@@ -540,11 +591,20 @@ onBeforeUnmount(() => {
       </el-button>
     </div>
 
-    <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转 -->
+    <!-- 爆单预测（T69）：预测「接下来一段时间」的单量，与上面 T48「现在压了多少杯」是两件事，
+         故分开展示。横幅里没有「一键暂停」按钮——预测若带动作入口就会被当成已生效。
+         刷新钩子交给看板的既有轮询带着跑，不额外起定时器。 -->
+    <ForecastBanner ref="forecastBanner" />
+
+    <!-- 每日经营日报（T68）：打烊后生成的口语化日报 + 异常预警；数字与账台统计同源 -->
+    <DailyReportCard />
+
+    <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转。
+         T62 起 notice 是「营业公告」，店长可自主编辑；暂停原因建议一并写进公告。 -->
     <div v-if="paused" class="pause-banner">
       <span class="banner-dot" />
       <span class="banner-text">
-        已暂停接单：顾客端无法新增下单（下单返回 1006）<span v-if="notice">· {{ notice }}</span>
+        已暂停接单：顾客端无法新增下单（下单返回 1006）<span v-if="notice">· 当前公告：{{ notice }}</span>
         ；进行中订单不受影响，可照常制作与出餐。
       </span>
     </div>
@@ -568,8 +628,8 @@ onBeforeUnmount(() => {
           :highlighted="highlightedIds.includes(order.orderId)"
           :busy="busyIds.includes(order.orderId)"
           :now-ts="nowTs"
-          :warn-seconds="sla.warnSeconds"
-          :danger-seconds="sla.dangerSeconds"
+          :warn-seconds="sla?.warnSeconds ?? DEFAULT_SLA.warnSeconds"
+          :danger-seconds="sla?.dangerSeconds ?? DEFAULT_SLA.dangerSeconds"
           @start="handleStart"
           @void="handleVoid"
         />
@@ -623,8 +683,17 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <p v-if="checklist.remark" class="checklist-remark">备注：{{ checklist.remark }}</p>
+        <!-- 制作指引（T60）：店长的商品描述，出餐时按它做；无描述的商品不显示 -->
+        <div v-if="checklistGuides.length" class="checklist-guides">
+          <div v-for="guide in checklistGuides" :key="guide.key" class="guide-item">
+            <span class="guide-title">{{ guide.productName }}</span>
+            <span class="guide-text">{{ guide.description }}</span>
+          </div>
+        </div>
         <el-checkbox-group v-model="checkedKeys" class="checklist-body">
           <el-checkbox v-for="line in checklistLines" :key="line.key" :label="line.key">
+            <!-- 团单成员标识（T64/W14）：出餐喊「003 王工」。非团单为 null 就不渲染 -->
+            <span v-if="line.memberTag" class="checklist-member">{{ line.memberTag }}</span>
             {{ line.text }}
           </el-checkbox>
         </el-checkbox-group>
@@ -696,12 +765,54 @@ onBeforeUnmount(() => {
   color: var(--text-2);
 }
 
+/* 制作指引（T60）：与规格勾选区分开——说明性文本，不参与勾选 */
+.checklist-guides {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+  max-height: 160px;
+  margin-bottom: var(--gap-3);
+  padding: var(--gap-2);
+  overflow-y: auto;
+  background: var(--brand-050);
+  border-radius: var(--radius-md);
+}
+
+.guide-item {
+  display: flex;
+  gap: var(--gap-2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+.guide-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.guide-text {
+  color: var(--text-2);
+}
+
 .checklist-body {
   display: flex;
   flex-direction: column;
   gap: var(--gap-1);
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* 团单成员标识（T64/W14）：靛蓝底衬托，出餐时一眼看到这杯是谁的 */
+.checklist-member {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: #fff;
+  background: var(--brand-500);
+  border-radius: var(--radius-pill);
 }
 
 .checklist-empty {

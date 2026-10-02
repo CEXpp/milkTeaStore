@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Expand, Fold, Reading, SwitchButton } from '@element-plus/icons-vue'
+import { Bell, Expand, Fold, Reading, SwitchButton } from '@element-plus/icons-vue'
 import { findNavItem } from '@/config/nav'
 import { useA11y } from '@/composables/useA11y'
 import { useShopStatus } from '@/composables/useShopStatus'
@@ -26,8 +26,12 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const { paused, notice, busy, ensureLoaded, setPaused, reset } = useShopStatus()
+const { paused, notice, busy, noticeBusy, ensureLoaded, setPaused, setNotice, reset } = useShopStatus()
 const { enabled: a11yEnabled, toggle: toggleA11y } = useA11y()
+
+/** 营业公告弹窗（T62）：草稿与已保存值分离，编辑期间不直接改动全局 notice */
+const noticeVisible = ref(false)
+const noticeDraft = ref('')
 
 const current = computed(() => findNavItem(route.path))
 const title = computed(() => (route.meta.title as string | undefined) ?? current.value?.title ?? '')
@@ -35,6 +39,20 @@ const desc = computed(() => (route.meta.desc as string | undefined) ?? current.v
 const initial = computed(() => (authStore.nickname || '店').slice(0, 1))
 
 onMounted(() => void ensureLoaded())
+
+/** 打开公告弹窗：以当前已保存值为草稿初值 */
+function openNotice(): void {
+  noticeDraft.value = notice.value ?? ''
+  noticeVisible.value = true
+}
+
+/** 保存公告：留空即撤下；失败保持弹窗打开，便于店长改完再试 */
+async function saveNotice(): Promise<void> {
+  const ok = await setNotice(noticeDraft.value.trim())
+  if (ok) {
+    noticeVisible.value = false
+  }
+}
 
 async function handleLogout(): Promise<void> {
   try {
@@ -76,6 +94,20 @@ async function handleLogout(): Promise<void> {
         <el-switch v-model="paused" :loading="busy" :disabled="busy" @change="setPaused" />
       </div>
 
+      <!-- 营业公告（T62）：与暂停开关解耦的独立入口，公告内容由店长自主维护 -->
+      <el-tooltip :content="notice ? `当前公告：${notice}` : '发布营业公告（顾客端菜单顶部可见）'" placement="bottom" effect="dark">
+        <button
+          type="button"
+          class="icon-btn"
+          :class="{ active: Boolean(notice) }"
+          :aria-pressed="Boolean(notice)"
+          aria-label="营业公告"
+          @click="openNotice"
+        >
+          <el-icon :size="18"><Bell /></el-icon>
+        </button>
+      </el-tooltip>
+
       <!-- 无障碍模式（T45）：大字 + 高对比的呈现层开关，不影响任何业务数据 -->
       <el-tooltip
         :content="a11yEnabled ? '关闭大字高对比' : '开启大字高对比（无障碍）'"
@@ -110,6 +142,25 @@ async function handleLogout(): Promise<void> {
     <el-tooltip v-if="paused" :content="notice ?? '顾客端暂不可下单'" placement="bottom" effect="dark">
       <span class="pause-flag">已暂停接单</span>
     </el-tooltip>
+
+    <!-- 营业公告编辑（T62）：限 60 字，可清空撤下 -->
+    <el-dialog v-model="noticeVisible" title="营业公告" width="420px" append-to-body>
+      <el-input
+        v-model="noticeDraft"
+        type="textarea"
+        :rows="3"
+        maxlength="60"
+        show-word-limit
+        placeholder="如：今日新品杨枝甘露已上架 / 珍珠售罄，预计明早恢复"
+      />
+      <p class="notice-hint">
+        公告会显示在顾客端菜单顶部，留空保存即撤下。与「暂停接单」开关相互独立。
+      </p>
+      <template #footer>
+        <el-button @click="noticeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="noticeBusy" @click="saveNotice">保存并发布</el-button>
+      </template>
+    </el-dialog>
   </header>
 </template>
 
@@ -268,6 +319,13 @@ async function handleLogout(): Promise<void> {
   border: 1px solid rgba(224, 163, 60, 0.3);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-xs);
+}
+
+/* 公告弹窗说明文案（T62） */
+.notice-hint {
+  margin: var(--gap-2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
 @media (max-width: 900px) {

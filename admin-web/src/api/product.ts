@@ -115,6 +115,59 @@ export function updateProductStatus(id: number, status: 0 | 1): Promise<void> {
   return request<void>({ url: `/admin/products/${id}/status`, method: 'put', data: { status } })
 }
 
+/**
+ * 批量上下架结果（T61）。
+ *
+ * 之所以回传条数而非 void：批量操作最危险的是「以为全下了、其实只下了一半」，
+ * 界面据此显示「已下架 N / 选中 M」，让店长能判断是否要继续处理剩下的。
+ */
+export interface ProductBatchStatusResult {
+  /** 前端提交的条数（去重后） */
+  requested: number
+  /** 实际被改动的条数 */
+  affected: number
+}
+
+/** 分类级一键估清结果（额外给出该分类商品总数，便于核对范围） */
+export interface ProductCategoryStatusResult {
+  categoryId: number
+  categoryName: string
+  total: number
+  affected: number
+}
+
+/**
+ * 批量上下架（T61，F07）：body {status: 0|1, productIds: []}。
+ *
+ * 「估清」在本系统即批量下架——不引入库存字段（11 章既有决策：上下架已覆盖售罄场景）。
+ */
+export function updateProductStatusBatch(
+  productIds: number[],
+  status: 0 | 1
+): Promise<ProductBatchStatusResult> {
+  return request<ProductBatchStatusResult>({
+    url: '/admin/products/batch-status',
+    method: 'put',
+    data: { status, productIds }
+  })
+}
+
+/**
+ * 分类级一键估清（T61，F07）：整类上下架（body {categoryId, status: 0|1}）。
+ *
+ * 不接受商品 id 子集——部分保留会让顾客仍能点到做不出来的商品。
+ */
+export function updateCategoryProductStatus(
+  categoryId: number,
+  status: 0 | 1
+): Promise<ProductCategoryStatusResult> {
+  return request<ProductCategoryStatusResult>({
+    url: '/admin/products/category-status',
+    method: 'put',
+    data: { categoryId, status }
+  })
+}
+
 /** 设置商品适用规格组（body {groupIds: []}，全量覆盖） */
 export function setProductSpecGroups(id: number, groupIds: number[]): Promise<void> {
   return request<void>({ url: `/admin/products/${id}/spec-groups`, method: 'put', data: { groupIds } })

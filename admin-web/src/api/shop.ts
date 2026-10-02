@@ -20,7 +20,22 @@ export interface ShopPauseResult {
 /** GET /api/customer/shop-status 响应 data（公开接口，无需 token） */
 export interface ShopStatus {
   paused: boolean
-  /** 暂停提示语，未设置时为 null */
+  /**
+   * 营业公告（T62）：未发布 / 已撤下时为 null。
+   *
+   * 后端已归一化——空白一律回 null，前端只判一次 `notice != null` 即可。
+   */
+  notice: string | null
+}
+
+/** PUT /api/admin/shop/notice 请求体（T62）：传空串或 null 即撤下公告 */
+export interface ShopNoticeRequest {
+  /** 公告正文，最多 60 字 */
+  notice?: string | null
+}
+
+/** PUT /api/admin/shop/notice 响应 data：归一化后的公告（撤下时为 null） */
+export interface ShopNoticeResult {
   notice: string | null
 }
 
@@ -32,6 +47,15 @@ export function getShopStatus(): Promise<ShopStatus> {
 /** 门店开关：暂停 / 恢复接单 */
 export function updateShopPause(data: ShopPauseRequest): Promise<ShopPauseResult> {
   return request<ShopPauseResult>({ url: '/admin/shop/pause', method: 'put', data })
+}
+
+/**
+ * 发布 / 撤下营业公告（T62，F06）。
+ *
+ * 与暂停开关解耦：切开关不再覆盖公告。响应回归一化后的值，前端据此回填输入框。
+ */
+export function updateShopNotice(notice: string | null): Promise<ShopNoticeResult> {
+  return request<ShopNoticeResult>({ url: '/admin/shop/notice', method: 'put', data: { notice } })
 }
 
 /** PUT /api/admin/shop/sla 请求体（T52）：SLA 预警阈值（秒） */

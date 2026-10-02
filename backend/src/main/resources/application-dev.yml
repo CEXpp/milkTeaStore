@@ -119,6 +119,39 @@ queue:
   pace:
     busy-cups: ${QUEUE_PACE_BUSY_CUPS:10}
     overload-cups: ${QUEUE_PACE_OVERLOAD_CUPS:20}
+# 每日经营日报（T68，W08）：打烊后自动生成口语化日报 + 异常预警。
+# 阈值全部可配；**取 0 或负数表示关闭该条检测**（不想被提醒就应该能关掉）。
+# 异常判定是确定性的（先按阈值算完、再让 AI 讲人话），故这些阈值直接决定「什么算异常」。
+report:
+  # 打烊生成时刻（0-23），默认 22 点
+  closing-hour: ${REPORT_CLOSING_HOUR:22}
+  # 营业额较近 7 日同期均值下降超过该百分比即报异常
+  revenue-drop-percent: ${REPORT_REVENUE_DROP:30}
+  # 退款率（退款额 / 未扣退款前的实付总额）超过该百分比即报异常
+  refund-ratio-percent: ${REPORT_REFUND_RATIO:10}
+  # 某渠道单量占比相对近 7 日同期下降超过该百分点即报异常
+  channel-drop-points: ${REPORT_CHANNEL_DROP:20}
+# 爆单预测与备料建议（T69，W09）：预测**只给建议，绝不自动执行**——
+# 不自动开暂停接单、不自动改价、不自动上下架；建议权在系统，决定权在人。
+# 阈值取 0 或负数即关闭该级提示；enabled=false 则整个预测停用（与「算了但正常」可区分）。
+forecast:
+  enabled: ${FORECAST_ENABLED:true}
+  # 预测窗口（分钟），默认 15
+  window-minutes: ${FORECAST_WINDOW_MINUTES:15}
+  # 同星期样本窗口（周），默认 4
+  lookback-weeks: ${FORECAST_LOOKBACK_WEEKS:4}
+  # 同星期样本不足该天数时，改用「近 14 天同时段」口径
+  min-sample-days: ${FORECAST_MIN_SAMPLE_DAYS:2}
+  # 预测单量达到该值 → 偏忙，建议提前备料（≤0 关闭该级）
+  busy-orders: ${FORECAST_BUSY_ORDERS:5}
+  # 预测单量达到该值 → 可能爆单，建议由店长手动考虑暂停接单（≤0 关闭该级）
+  overload-orders: ${FORECAST_OVERLOAD_ORDERS:8}
+# 演示沙盘（T74，F11）：一键造当日数据，供 AC-15 统计口径核对与 AC-05 超时关闭当场演示。
+# **真店部署必须置为 false**（或直接删掉本段）——置 false 时整个 /api/admin/demo/** 端点
+# 不会被注册、URL 返回 404，而不是「进去了才被拒」。
+demo:
+  seed:
+    enabled: ${DEMO_SEED_ENABLED:true}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）
