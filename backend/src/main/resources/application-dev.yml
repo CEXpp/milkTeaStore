@@ -146,6 +146,12 @@ forecast:
   busy-orders: ${FORECAST_BUSY_ORDERS:5}
   # 预测单量达到该值 → 可能爆单，建议由店长手动考虑暂停接单（≤0 关闭该级）
   overload-orders: ${FORECAST_OVERLOAD_ORDERS:8}
+# 演示沙盘（T74，F11）：一键造当日数据，供 AC-15 统计口径核对与 AC-05 超时关闭当场演示。
+# **真店部署必须置为 false**（或直接删掉本段）——置 false 时整个 /api/admin/demo/** 端点
+# 不会被注册、URL 返回 404，而不是「进去了才被拒」。
+demo:
+  seed:
+    enabled: ${DEMO_SEED_ENABLED:true}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）
