@@ -19,6 +19,7 @@ import { playDing, unlockDing } from '@/utils/ding'
 import { subscribeBoardEvents, type BoardEventSubscription } from '@/utils/order-events'
 import OrderCard from '@/components/board/OrderCard.vue'
 import StatBar from '@/components/board/StatBar.vue'
+import DailyReportCard from '@/components/board/DailyReportCard.vue'
 
 /**
  * 订单看板（T19，LLD 3.5 / 7.3）：
@@ -561,6 +562,9 @@ onBeforeUnmount(() => {
         去暂停接单
       </el-button>
     </div>
+
+    <!-- 每日经营日报（T68）：打烊后生成的口语化日报 + 异常预警；数字与账台统计同源 -->
+    <DailyReportCard />
 
     <!-- 暂停接单黄条横幅（T23）：提示顾客端不可下单，但已下单单据照常流转。
          T62 起 notice 是「营业公告」，店长可自主编辑；暂停原因建议一并写进公告。 -->

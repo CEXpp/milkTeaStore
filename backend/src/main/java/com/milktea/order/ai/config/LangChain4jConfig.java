@@ -8,6 +8,7 @@ import com.milktea.order.ai.tools.AiToolWhitelist;
 import com.milktea.order.ai.tools.DraftOrderTool;
 import com.milktea.order.ai.tools.MenuSearchTool;
 import com.milktea.order.ai.tools.ShopStatsTool;
+import com.milktea.order.report.service.DailyReportNarrator;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -111,6 +112,20 @@ public class LangChain4jConfig {
                     trace.record(name, args, execution.result(), execution.hasFailed(),
                             !AiToolWhitelist.isAllowed(name));
                 })
+                .build();
+    }
+
+    /**
+     * 每日日报表述层装配（T68，W08）。
+     *
+     * <p><b>不注册任何工具</b>：指标与异常都已由 {@code DailyReportCalculator} 算完，
+     * 模型只负责讲成人话。给它工具就等于允许它自己去查数、自由找规律——
+     * 那正是「编造趋势」的来源（任务卡关键设计「AI 只做表述层，不做计算层」）。</p>
+     */
+    @Bean
+    public DailyReportNarrator dailyReportNarrator(ChatModel chatModel) {
+        return AiServices.builder(DailyReportNarrator.class)
+                .chatModel(chatModel)
                 .build();
     }
 

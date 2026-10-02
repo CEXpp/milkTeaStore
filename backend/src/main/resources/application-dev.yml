@@ -119,6 +119,18 @@ queue:
   pace:
     busy-cups: ${QUEUE_PACE_BUSY_CUPS:10}
     overload-cups: ${QUEUE_PACE_OVERLOAD_CUPS:20}
+# 每日经营日报（T68，W08）：打烊后自动生成口语化日报 + 异常预警。
+# 阈值全部可配；**取 0 或负数表示关闭该条检测**（不想被提醒就应该能关掉）。
+# 异常判定是确定性的（先按阈值算完、再让 AI 讲人话），故这些阈值直接决定「什么算异常」。
+report:
+  # 打烊生成时刻（0-23），默认 22 点
+  closing-hour: ${REPORT_CLOSING_HOUR:22}
+  # 营业额较近 7 日同期均值下降超过该百分比即报异常
+  revenue-drop-percent: ${REPORT_REVENUE_DROP:30}
+  # 退款率（退款额 / 未扣退款前的实付总额）超过该百分比即报异常
+  refund-ratio-percent: ${REPORT_REFUND_RATIO:10}
+  # 某渠道单量占比相对近 7 日同期下降超过该百分点即报异常
+  channel-drop-points: ${REPORT_CHANNEL_DROP:20}
 # AI 点单（T29）：三件套全配置化，换豆包等 OpenAI 兼容模型只改此处，代码零改动（LLD 6.2）
 ai:
   # GLM 的 OpenAI 兼容端点（LLD 6.2）
