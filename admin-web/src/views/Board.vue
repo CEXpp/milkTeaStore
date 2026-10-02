@@ -20,6 +20,7 @@ import { subscribeBoardEvents, type BoardEventSubscription } from '@/utils/order
 import OrderCard from '@/components/board/OrderCard.vue'
 import StatBar from '@/components/board/StatBar.vue'
 import DailyReportCard from '@/components/board/DailyReportCard.vue'
+import ForecastBanner from '@/components/board/ForecastBanner.vue'
 
 /**
  * 订单看板（T19，LLD 3.5 / 7.3）：
@@ -53,6 +54,8 @@ const pace = ref<QueuePace | null>(null)
 
 /** SLA 阈值（T52）：随看板响应下发；单独存一份，避免受 board 的差量合并影响 */
 const sla = ref<BoardSlaSettings>({ warnSeconds: 300, dangerSeconds: 600 })
+/** 爆单预测横幅（T69）：由看板的既有轮询带着刷新，不额外起定时器 */
+const forecastBanner = ref<InstanceType<typeof ForecastBanner> | null>(null)
 /** 秒级时间戳：统一驱动各卡片的等待时长 mm:ss（卡片不各自起定时器） */
 const nowTs = ref(Date.now())
 let tickTimer: number | null = null
@@ -209,9 +212,16 @@ async function refreshBoard(): Promise<void> {
     }
     // 顺带刷新接单节奏（T48）：失败静默，不污染看板主流程
     void loadPace()
+    // 顺带刷新爆单预测（T69）：与节奏同频；组件自己选「非正常才展示」，这里不做判断
+    void loadForecast()
   } catch {
     // 错误提示已由 request 层直显；下一个轮询周期自动重试
   }
+}
+
+/** 爆单预测（T69）：只读建议，刷新失败不打扰店长。 */
+async function loadForecast(): Promise<void> {
+  await forecastBanner.value?.load()
 }
 
 /** 接单节奏建议（T48）：只读展示，刷新失败不打扰店长。 */
@@ -562,6 +572,11 @@ onBeforeUnmount(() => {
         去暂停接单
       </el-button>
     </div>
+
+    <!-- 爆单预测（T69）：预测「接下来一段时间」的单量，与上面 T48「现在压了多少杯」是两件事，
+         故分开展示。横幅里没有「一键暂停」按钮——预测若带动作入口就会被当成已生效。
+         刷新钩子交给看板的既有轮询带着跑，不额外起定时器。 -->
+    <ForecastBanner ref="forecastBanner" />
 
     <!-- 每日经营日报（T68）：打烊后生成的口语化日报 + 异常预警；数字与账台统计同源 -->
     <DailyReportCard />

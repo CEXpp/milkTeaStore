@@ -8,6 +8,7 @@ import com.milktea.order.ai.tools.AiToolWhitelist;
 import com.milktea.order.ai.tools.DraftOrderTool;
 import com.milktea.order.ai.tools.MenuSearchTool;
 import com.milktea.order.ai.tools.ShopStatsTool;
+import com.milktea.order.forecast.service.PrepAdviceNarrator;
 import com.milktea.order.report.service.DailyReportNarrator;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -125,6 +126,19 @@ public class LangChain4jConfig {
     @Bean
     public DailyReportNarrator dailyReportNarrator(ChatModel chatModel) {
         return AiServices.builder(DailyReportNarrator.class)
+                .chatModel(chatModel)
+                .build();
+    }
+
+    /**
+     * 备料建议表述层装配（T69，W09）。
+     *
+     * <p><b>不注册任何工具</b>：预测单量与销量结构已由 {@code DemandForecastService} 算完，
+     * 模型只负责措辞。给它工具就等于允许它自己去查数、自由找规律。</p>
+     */
+    @Bean
+    public PrepAdviceNarrator prepAdviceNarrator(ChatModel chatModel) {
+        return AiServices.builder(PrepAdviceNarrator.class)
                 .chatModel(chatModel)
                 .build();
     }
