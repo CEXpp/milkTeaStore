@@ -17,11 +17,23 @@ const forecast = ref<DemandForecast | null>(null)
 /** 仅在非正常档展示；预测未启用或正常时整条不出现（正常时刷一条「一切正常」是噪声）。 */
 const visible = computed(() => Boolean(forecast.value?.enabled && forecast.value.level !== 'NORMAL'))
 
+/**
+ * 失败熔断：预测请求失败后不再重试。
+ *
+ * <p>本组件的 load 挂在看板 3 秒轮询上（与接单节奏同频）。若后端该接口持续异常，
+ * 每 3 秒失败一次就会每 3 秒弹一次「服务器内部错误」——一个<b>非核心的预测功能</b>
+ * 用弹窗把店长淹没，比没有预测更糟（他会连真正的出餐异常提示一起忽略）。
+ * 故失败一次即停止后续请求：预测不可用就静默不可用，绝不做骚扰式重试。</p>
+ */
+let loadFailed = false
+
 async function load(): Promise<void> {
+  if (loadFailed) return
   try {
     forecast.value = await getDemandForecast()
   } catch {
-    // 错误提示已由 request 层直显；预测不可用不该影响看板其余部分
+    // 错误提示已由 request 层直显一次；此后熔断，不再随轮询反复弹窗
+    loadFailed = true
   }
 }
 
