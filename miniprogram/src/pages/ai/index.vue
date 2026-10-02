@@ -12,6 +12,7 @@ import {
   type AiFallback
 } from '@/api/ai'
 import { payOrder } from '@/api/order'
+import { getMenu, type MenuProduct } from '@/api/menu'
 import { ApiError } from '@/utils/request'
 import { buildSpeechText } from '@/utils/speech'
 import { useA11yStore } from '@/stores/a11y'
@@ -50,6 +51,8 @@ interface ChatMessage {
 const a11y = useA11yStore()
 /** 语音播报开关（T70）：输出侧 TTS，不涉及输入侧 ASR（见 utils/speech.ts 的边界说明） */
 const speech = useSpeechStore()
+/** 在售商品（扁平）：规格纠错用（T71） */
+const menuProducts = ref<MenuProduct[]>([])
 
 const messages = ref<ChatMessage[]>([])
 const input = ref('')
@@ -68,10 +71,25 @@ const showExamples = computed(() => messages.value.filter((item) => item.role ==
 onShow(() => {
   // 语音播报能力探测（T70）：进页探一次即可，不在每轮对话里重复探测
   speech.init()
+  // 规格纠错需要「有哪些规格可选」，进页拉一次菜单即可
+  void loadMenuForSpec()
   if (messages.value.length === 0) {
     appendMessage({ role: 'assistant', text: WELCOME })
   }
 })
+
+/** 在售商品（扁平化）：供草稿卡按名称反查规格组与可选项（T71）。失败静默，只影响纠错入口。 */
+async function loadMenuForSpec(): Promise<void> {
+  if (menuProducts.value.length) {
+    return
+  }
+  try {
+    const menu = await getMenu()
+    menuProducts.value = menu.categories.flatMap((category) => category.products)
+  } catch {
+    menuProducts.value = []
+  }
+}
 
 function appendMessage(message: Omit<ChatMessage, 'id'>): void {
   sequence += 1
@@ -161,6 +179,20 @@ function handleRemove(item: AiDraftItem): void {
 }
 
 /**
+ * 规格就地纠正（T71）：点一下规格组选了新值 → 翻译成一句指令。
+ *
+ * <p>刻意<b>不发新会话</b>：走的就是同一个 chat 通道（sessionId 原样带上），
+ * 后端会话里的草稿被工具改写后回传新的 CARD——与行内改数量完全同构。
+ * 不新增任何订单入口，也不在本地改草稿（本地改会让卡片金额与服务端草稿不一致）。</p>
+ */
+function handleSpecChange(item: AiDraftItem, groupName: string, optionName: string): void {
+  if (sending.value) {
+    return
+  }
+  void send(`把「${item.productName}」的${groupName}改成${optionName}`)
+}
+
+/**
  * 立即支付：confirm-order 转正式订单 → 立刻连发 pay 完成支付闭环 → 跳订单详情页。
  *
  * AI 侧没有支付工具，这一步必须由用户点按触发（SRS 约束三原则第三条）。
@@ -204,8 +236,10 @@ async function handlePay(): Promise<void> {
           v-if="message.draft"
           :draft="message.draft"
           :busy="sending || paying"
+          :products="menuProducts"
           @change="handleAdjust"
           @remove="handleRemove"
+          @spec-change="handleSpecChange"
           @pay="handlePay"
         />
       </view>
