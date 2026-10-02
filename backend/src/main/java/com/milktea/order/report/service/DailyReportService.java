@@ -49,8 +49,6 @@ public class DailyReportService {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    /** 本场景无多轮上下文，固定会话标识即可。 */
-    private static final String NARRATOR_SESSION = "daily-report";
 
     private final DailyReportCalculator calculator;
     private final DailyReportNarrator narrator;
@@ -83,7 +81,7 @@ public class DailyReportService {
         String narrative = null;
         boolean degraded = false;
         try {
-            narrative = narrator.narrate(NARRATOR_SESSION, buildFacts(day, computed));
+            narrative = narrator.narrate(buildFacts(day, computed));
         } catch (Exception e) {
             // 模型不可用：不编造结论，退化为纯数据版（验收项）
             degraded = true;

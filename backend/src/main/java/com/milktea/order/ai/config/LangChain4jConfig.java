@@ -86,12 +86,29 @@ public class LangChain4jConfig {
      *
      * @param chatModel     见 {@link #chatModel}
      * @param statsTool     只读统计工具（唯一注入的工具）
+     * @param maxMessages   记忆窗口消息数
      */
     @Bean
-    public ShopCopilotAssistant shopCopilotAssistant(ChatModel chatModel, ShopStatsTool statsTool) {
+    public ShopCopilotAssistant shopCopilotAssistant(
+            ChatModel chatModel,
+            ShopStatsTool statsTool,
+            @Value("${ai.max-messages:20}") int maxMessages) {
         AiToolWhitelist.assertReadOnly();
         return AiServices.builder(ShopCopilotAssistant.class)
                 .chatModel(chatModel)
+                // Copilot 是**真的**要多轮上下文（店长会追问「那上周呢」「哪个渠道贡献最大」），
+                // 所以必须挂 ChatMemoryProvider——LangChain4j 在装配期就会校验：
+                // 接口带 @MemoryId 而未配 provider，直接抛 IllegalConfigurationException。
+                //
+                // **刻意不注入 ChatMemoryStoreImpl**：那是点单会话的表，memoryId 会被当作
+                // ai_session.uuid 去查，而 Copilot 的会话标识根本不在该表里——共用只会读到
+                // 空历史 + 每次写回都被跳过（只 WARN），表现为「多轮追问时模型突然失忆」，
+                // 且在日志里很难归因。此处用进程内窗口：Copilot 是店主当面对话，
+                // 重启后丢历史可以接受，换来的是不污染点单记忆、不依赖额外表。
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                        .id(memoryId)
+                        .maxMessages(maxMessages)
+                        .build())
                 .tools(statsTool)
                 // 拦截未登记的工具名（T67）：模型「幻觉」出一个写操作工具名时，
                 // 缺省行为可能被当作可执行调用；这里一律改写成拒绝语回给模型，

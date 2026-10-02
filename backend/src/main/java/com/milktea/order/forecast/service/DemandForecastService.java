@@ -113,7 +113,7 @@ public class DemandForecastService {
             // 店长会很快学会无视它——那样真爆单时也不会看
             String fallback = templateAdvice(level, predicted, window, topProducts);
             try {
-                advice = narrator.advise("demand-forecast",
+                advice = narrator.advise(
                         buildFacts(level, predicted, window, slotStart, slotEnd, basis, topProducts));
             } catch (Exception e) {
                 degraded = true;
