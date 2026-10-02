@@ -36,8 +36,14 @@ public interface BrewArchiveMapper {
     /**
      * 检索条件（列表与总数共用，保证「页内条数」与「总数」口径一致）。
      *
-     * <p>{@code <script>} 内为动态 SQL；所有入参走 {@code #{}} 预编译占位，不做字符串拼接
-     * ——含 {@code %} / {@code _} 的检索词只会被当普通字符比对，不会退化成通配符。</p>
+     * <p><b>关键：{@code <script>} 必须从语句开头就存在，不能只包住本片段</b>。
+     * MyBatis 对 {@code @Select} 的字符串常量走「内联 SQL」路径（异常信息里会显示
+     * {@code -Inline}），此路径<b>跳过</b>动态标签解析——把 {@code <script>} 写在本常量内部、
+     * 再拼到 {@code SELECT ... FROM ...} 后面，是<b>无效</b>的：{@code <where>} 会被当普通文本
+     * 原样发往 MySQL，报「syntax error near '&lt;where&gt;'」。
+     * 故两个引用方的 {@code @Select} 都从首行起就是 {@code <script>}（见下）。</p>
+     *
+     * <p>该错误编译期无感、启动期也无感，<b>只在真的执行到这条查询</b>时才暴露。</p>
      */
     String ARCHIVE_WHERE = """
             <where>
@@ -56,9 +62,12 @@ public interface BrewArchiveMapper {
 
     /** 满足条件的档案总条数（分页总数）。 */
     @Select("""
+            <script>
             SELECT COUNT(*) AS total
             FROM order_item oi JOIN orders o ON o.id = oi.order_id
-            """ + ARCHIVE_WHERE)
+            """ + ARCHIVE_WHERE + """
+            </script>
+            """)
     Map<String, Object> selectArchiveCount(@Param("start") LocalDateTime start,
                                            @Param("end") LocalDateTime end,
                                            @Param("productId") Long productId,
@@ -79,6 +88,7 @@ public interface BrewArchiveMapper {
      * @param offset 偏移量
      */
     @Select("""
+            <script>
             SELECT oi.id AS orderItemId, oi.order_id AS orderId, o.order_no AS orderNo,
                    o.pickup_code AS pickupCode, o.source AS source, o.status AS status,
                    oi.product_id AS productId, oi.product_name AS productName,
@@ -94,8 +104,11 @@ public interface BrewArchiveMapper {
                         ELSE NULL END AS prepSeconds
             FROM order_item oi JOIN orders o ON o.id = oi.order_id
             """ + ARCHIVE_WHERE
-            + " ORDER BY COALESCE(o.paid_at, o.created_at) DESC, oi.id DESC"
-            + " LIMIT #{limit} OFFSET #{offset}")
+            + """
+            ORDER BY COALESCE(o.paid_at, o.created_at) DESC, oi.id DESC
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
     List<Map<String, Object>> selectArchives(@Param("start") LocalDateTime start,
                                              @Param("end") LocalDateTime end,
                                              @Param("productId") Long productId,

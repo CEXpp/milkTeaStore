@@ -6,7 +6,6 @@ import com.milktea.order.common.exception.ErrorCode;
 import com.milktea.order.report.entity.DailyReport;
 import com.milktea.order.report.mapper.DailyReportMapper;
 import com.milktea.order.report.vo.DailyReportVo;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -43,7 +42,6 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DailyReportService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();

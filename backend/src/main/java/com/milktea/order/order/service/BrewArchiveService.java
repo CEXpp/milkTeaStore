@@ -8,7 +8,6 @@ import com.milktea.order.order.dto.OptionSnapshot;
 import com.milktea.order.order.entity.OrderStatus;
 import com.milktea.order.order.mapper.BrewArchiveMapper;
 import com.milktea.order.order.vo.BrewArchiveVo;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -45,7 +44,6 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BrewArchiveService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();

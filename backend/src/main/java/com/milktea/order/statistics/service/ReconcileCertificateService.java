@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -84,7 +85,10 @@ public class ReconcileCertificateService {
                 conclusion,
                 toRows(recomputed.included()),
                 toRows(recomputed.excluded()),
-                LocalDate.now(clock).format(DATE_FMT) + " " + java.time.LocalTime.now(clock).format(DATETIME_FMT));
+                // 一次性取 LocalDateTime 再格式化：不能拆成 LocalDate + LocalTime 两段各自格式化，
+                // 后者会把「yyyy-MM-dd」套到只有时分秒的 LocalTime 上，抛
+                // UnsupportedTemporalTypeException: Unsupported field: YearOfEra。
+                LocalDateTime.now(clock).format(DATETIME_FMT));
     }
 
     /**

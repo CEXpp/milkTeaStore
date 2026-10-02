@@ -72,11 +72,15 @@ public class PickupDelegateService {
     private final SecureRandom random = new SecureRandom();
 
     /**
-     * 显式构造器而非 {@code @RequiredArgsConstructor}：
-     * 本类曾需 {@code @Value} 注入时区（与 T11/T34 同源），但有效期判定全部交给
-     * MySQL 的 {@code NOW()}（见 {@code PickupTokenMapper.consume}）——
-     * 由数据库裁决时间比在应用层算更可靠，应用与库时钟不一致时也不会误放行。
-     * 保留显式构造器以免将来再加入 {@code @Value} 字段时踩 Lombok 的坑。
+     * 显式构造器。
+     *
+     * <p>时间判定全部交给 MySQL 的 {@code NOW()}（见 {@code PickupTokenMapper.consume}）——
+     * 由数据库裁决比在应用层算更可靠，应用与库时钟不一致时也不会误放行。</p>
+     *
+     * <p><b>此处绝不能再叠加 {@code @RequiredArgsConstructor}</b>：一旦叠加，本类会有
+     * 两个构造器且都无 {@code @Autowired} 标注，Spring 7 将无法决定注入哪一个，
+     * 转而去找无参构造器并抛 {@code No default constructor found}——
+     * 且该错误只在<b>启动装配期</b>暴露，编译期完全无感。</p>
      */
     public PickupDelegateService(PickupTokenMapper pickupTokenMapper,
                                  OrderMapper orderMapper,

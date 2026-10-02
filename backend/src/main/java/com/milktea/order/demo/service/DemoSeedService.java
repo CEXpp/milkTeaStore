@@ -11,7 +11,6 @@ import com.milktea.order.order.mapper.OrderMapper;
 import com.milktea.order.order.service.SequenceService;
 import com.milktea.order.product.entity.Product;
 import com.milktea.order.product.mapper.ProductMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -43,7 +42,6 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DemoSeedService {
 
     /** 商品无价格时的兜底金额（正常商品都有价，这里只是防御空值）。 */

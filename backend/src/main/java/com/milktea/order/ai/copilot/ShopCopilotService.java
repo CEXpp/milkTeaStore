@@ -11,6 +11,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * 店长 Copilot 服务（T67，W07）。
@@ -35,6 +36,14 @@ public class ShopCopilotService {
             "trend", "近 N 日趋势",
             "ranking", "商品销量排行",
             "orderFlow", "订单流水明细");
+
+    /**
+     * 结论里是否含数字。
+     *
+     * <p>只认阿拉伯数字：中文数字（「一百五十」）在经营问答里几乎不出现，而若一并匹配，
+     * 「正常」「十分」这类含数字汉字的日常措辞会被误判，反而把正常回答也拦掉。</p>
+     */
+    private static final Pattern DIGIT = Pattern.compile("\\d");
 
     private final ShopCopilotAssistant shopCopilotAssistant;
 
@@ -87,7 +96,20 @@ public class ShopCopilotService {
             // 出现过越权尝试：明确告知，而不是让店长以为操作成功了
             tip = "该操作涉及修改数据，AI 只有查询权限，请到对应管理页面手动完成。";
         } else if (tables.isEmpty()) {
-            tip = "本轮没有查询数据，仅作说明性回答。";
+            // 本轮一个工具都没调 → 结论里不该出现任何数字。
+            //
+            // 这是**硬校验，不是提示词叮嘱**。实测：问「今天卖了多少杯」时模型不调工具、
+            // 直接答「150 杯」（真实值 4 杯）；问「查一下今天的经营概览」则正常调工具、
+            // 答对。同一问题换个措辞就从真变假，而店长无从分辨哪种问法安全——
+            // 提示词里写了「绝不编造」也拦不住。故改为在服务端判定：
+            // 没取到数据就不许出数字，宁可让店长自己去看统计页。
+            if (conclusion != null && DIGIT.matcher(conclusion).find()) {
+                log.warn("[T67] copilot 无工具调用却输出数字，已拦截并降级原文：{}", conclusion);
+                conclusion = "我这轮没有查到经营数据，不能凭印象给数字。"
+                        + "请把问题说得具体些（例如「查一下今天的经营概览」「查询商品销量排行」），"
+                        + "或直接到「账台统计」页查看，那里的数字是准的。";
+            }
+            tip = "本轮没有查询数据，仅作说明性回答（不含任何统计数字）。";
         }
 
         log.info("[T67] copilot answered session={} tools={} rejected={}",

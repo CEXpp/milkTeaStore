@@ -18,7 +18,6 @@ import com.milktea.order.order.service.OrderService;
 import com.milktea.order.order.service.SequenceService;
 import com.milktea.order.order.vo.PayVo;
 import com.milktea.order.product.service.PricingService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -67,7 +66,6 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class GroupCartService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();

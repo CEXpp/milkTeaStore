@@ -5,7 +5,6 @@ import com.milktea.order.forecast.mapper.DemandForecastMapper;
 import com.milktea.order.forecast.vo.DemandForecastVo;
 import com.milktea.order.statistics.service.StatsService;
 import com.milktea.order.statistics.vo.StatsRankingVo;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -35,7 +34,6 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DemandForecastService {
 
     private final DemandForecastMapper forecastMapper;

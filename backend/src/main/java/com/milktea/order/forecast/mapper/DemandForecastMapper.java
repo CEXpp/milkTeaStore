@@ -52,19 +52,19 @@ public interface DemandForecastMapper {
      */
     @Select("""
             WITH RECURSIVE days AS (
-              SELECT DATE(?) AS d
+              SELECT DATE(#{since}) AS d
               UNION ALL
-              SELECT d + INTERVAL 7 DAY FROM days WHERE d + INTERVAL 7 DAY <= ?
+              SELECT d + INTERVAL 7 DAY FROM days WHERE d + INTERVAL 7 DAY <= #{until}
             ),
             cnt AS (
               SELECT DATE(o.paid_at) AS d, COUNT(*) AS c
               FROM orders o
               WHERE o.paid_at IS NOT NULL
-                AND o.paid_at >= ?
-                AND o.paid_at < DATE(?) + INTERVAL 1 DAY
-                AND DAYOFWEEK(o.paid_at) = ?
-                AND TIME(o.paid_at) >= ?
-                AND TIME(o.paid_at) < ?
+                AND o.paid_at >= #{since}
+                AND o.paid_at < DATE(#{until}) + INTERVAL 1 DAY
+                AND DAYOFWEEK(o.paid_at) = #{dayOfWeek}
+                AND TIME(o.paid_at) >= #{slotStart}
+                AND TIME(o.paid_at) < #{slotEnd}
                 AND """ + PAID_STATUS + """
               GROUP BY DATE(o.paid_at)
             )
@@ -89,18 +89,18 @@ public interface DemandForecastMapper {
      */
     @Select("""
             WITH RECURSIVE days AS (
-              SELECT DATE(?) AS d
+              SELECT DATE(#{since}) AS d
               UNION ALL
-              SELECT d + INTERVAL 1 DAY FROM days WHERE d + INTERVAL 1 DAY <= ?
+              SELECT d + INTERVAL 1 DAY FROM days WHERE d + INTERVAL 1 DAY <= #{until}
             ),
             cnt AS (
               SELECT DATE(o.paid_at) AS d, COUNT(*) AS c
               FROM orders o
               WHERE o.paid_at IS NOT NULL
-                AND o.paid_at >= ?
-                AND o.paid_at < DATE(?) + INTERVAL 1 DAY
-                AND TIME(o.paid_at) >= ?
-                AND TIME(o.paid_at) < ?
+                AND o.paid_at >= #{since}
+                AND o.paid_at < DATE(#{until}) + INTERVAL 1 DAY
+                AND TIME(o.paid_at) >= #{slotStart}
+                AND TIME(o.paid_at) < #{slotEnd}
                 AND """ + PAID_STATUS + """
               GROUP BY DATE(o.paid_at)
             )
