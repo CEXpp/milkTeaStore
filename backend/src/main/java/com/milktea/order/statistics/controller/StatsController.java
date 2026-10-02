@@ -2,12 +2,18 @@ package com.milktea.order.statistics.controller;
 
 import com.milktea.order.common.result.PageResult;
 import com.milktea.order.common.result.R;
+import com.milktea.order.statistics.service.ReconcileCertificateService;
 import com.milktea.order.statistics.service.StatsService;
+import com.milktea.order.statistics.vo.ReconcileCertificateVo;
 import com.milktea.order.statistics.vo.StatsOrderRowVo;
 import com.milktea.order.statistics.vo.StatsRankingVo;
 import com.milktea.order.statistics.vo.StatsSummaryVo;
 import com.milktea.order.statistics.vo.StatsTrendVo;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,6 +39,7 @@ import java.util.List;
 public class StatsController {
 
     private final StatsService statsService;
+    private final ReconcileCertificateService reconcileCertificateService;
 
     /** 当日概览：date 缺省为服务端今天（按 app.time-zone）；金额均为两位小数字符串。 */
     @GetMapping("/stats/summary")
@@ -62,5 +69,34 @@ public class StatsController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "size", defaultValue = "20") int size) {
         return R.ok(statsService.orders(date, status, page, size));
+    }
+
+    /**
+     * 对账凭证（T73，W24）：报表数 vs 独立复算数的逐项比对 + 纳入/排除明细。
+     *
+     * <p><b>复算走的是另一条代码路径</b>（逐单在应用层按 SRS 6.5 重算），
+     * 故「一致」是有意义的结论，而不是拿报表跟它自己比。</p>
+     */
+    @GetMapping("/stats/reconcile")
+    public R<ReconcileCertificateVo> reconcile(
+            @RequestParam(value = "date", required = false) String date) {
+        return R.ok(reconcileCertificateService.certificate(date));
+    }
+
+    /**
+     * 导出对账凭证（T73）：纯文本。
+     *
+     * <p>用 {@code text/plain} 而非 JSON 下载——凭证要「一眼读完并留下痕迹」，
+     * 导出一堆单元格反而更难读。</p>
+     */
+    @GetMapping(value = "/stats/reconcile/export", produces = "text/plain;charset=UTF-8")
+    public ResponseEntity<String> exportReconcile(
+            @RequestParam(value = "date", required = false) String date) {
+        String text = reconcileCertificateService.export(date);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"reconcile-" + (StringUtils.hasText(date) ? date.trim() : "today") + ".txt\"")
+                .contentType(MediaType.parseMediaType("text/plain;charset=UTF-8"))
+                .body(text);
     }
 }
