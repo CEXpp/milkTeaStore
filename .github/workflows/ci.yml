@@ -5,6 +5,10 @@
 #   admin-web    Vue 3 / Vite 8 / TypeScript
 #   miniprogram  uni-app（微信小程序构建产物）
 #
+# 三端全绿后，再由 docker-backend / docker-admin-web 两个 job 接力构建并推送镜像到 GHCR，
+# 只在 main 上执行（原先独立的 test-build.yml 已合并进来：那个 workflow 没有门禁，
+# 类型检查挂了也会把镜像推上 latest）。
+#
 # 后端 application-dev.yml 默认连开发机的外网库，CI 通过环境变量把数据源指向本次运行的
 # MySQL 服务容器，使流水线自包含、不依赖任何外部环境。
 
@@ -19,7 +23,7 @@ on:
   # 支持手动重跑，便于排查偶发失败
   workflow_dispatch:
 
-# 最小权限：流水线只读取仓库内容
+# 最小权限：校验类 job 只读取仓库内容；推镜像所需的 packages: write 单独授予两个 docker-* job
 permissions:
   contents: read
 
@@ -180,3 +184,106 @@ jobs:
           path: miniprogram/dist/build/mp-weixin/
           if-no-files-found: ignore
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 镜像发布：三端全部跑绿才推（needs 是硬依赖，任一端失败则两个发布 job 不执行）
+  #
+  # 只在 main 上执行；PR 或其他分支的 run 会显示为 skipped，不浪费 runner。
+  # 两个发布 job 彼此无依赖，默认并行；若只有一个成功，那一轮前后端镜像不成对，
+  # 按 sha 标签部署前需到两个包里分别确认该标签存在。
+  # ---------------------------------------------------------------------------
+  docker-backend:
+    name: docker · 后端镜像发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend, admin-web, miniprogram]
+    # 仅主干：避开 push 触发列表里的 cph / dsh 也来抢 latest 标签
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/cexpp/milkteastore
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取镜像元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=ref,event=branch
+
+      - name: 配置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=backend-image
+          cache-to: type=gha,scope=backend-image,mode=max
+
+  docker-admin-web:
+    name: docker · 后台前端镜像发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [backend, admin-web, miniprogram]
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/cexpp/milkteastore-admin-web
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 标签策略与后端一致，一次 push 出的两个镜像能用同一个 sha-xxxxxxx 成对部署
+      - name: 提取镜像元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=ref,event=branch
+
+      - name: 配置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: ./admin-web
+          file: ./admin-web/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=admin-web-image
+          cache-to: type=gha,scope=admin-web-image,mode=max
