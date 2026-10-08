@@ -2,14 +2,16 @@
 # 奶茶点单系统 · 本地部署编排
 #
 # 拓扑：MySQL 与 MinIO 部署在远端服务器（地址由 backend/.env 提供，模板见 backend/.env.example），
-#       本地只需运行 backend 容器；容器启动后经远端地址直连 DB / 对象存储。
-#       未提供 backend/.env 时回落 application-dev.yml 的 localhost 默认值。
+#       本地运行 backend + admin-web 两个容器；后端启动后经远端地址直连 DB / 对象存储，
+#       前端 nginx 直接读取静态产物，并把 /api 反代到 backend 容器（同源方案，无需配 CORS）。
 #
 # 用法：
 #   cd docker
-#   docker compose up -d --build        # 默认只起 backend
-#   curl http://127.0.0.1:8080/actuator/health
-#   # 公网暴露：本机装 cpolar，隧道指向 8080 → HTTPS 域名
+#   docker compose up -d --build        # 默认起 backend + admin-web
+#   curl http://127.0.0.1:8080/actuator/health          # 后端健康
+#   curl -I http://127.0.0.1:8081/                     # 前端首页
+#   # 只起后端：docker compose up -d --build backend
+#   # 公网暴露：本机装 cpolar，隧道指向 8081（前端）即可，/api 由 nginx 内部转发
 #
 # 说明：mysql / minio 两个服务是「本地自建基础设施」的备份定义，默认不启动；
 #       仅当需要在本机起基础设施时用：docker compose --profile infra up -d
@@ -39,6 +41,27 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
+
+  # -------------------------------------------------------------------
+  # 管理后台前端：nginx 静态托管 + /api 反代（反代目标写死为 http://backend:8080，
+  # 即下方 service 名；改服务名会直接让 nginx 启动时解析失败）
+  # -------------------------------------------------------------------
+  admin-web:
+    build:
+      context: ../admin-web
+      dockerfile: Dockerfile
+    image: milktea-admin-web:latest
+    container_name: demo-admin-web
+    restart: unless-stopped
+    # nginx 在启动阶段静态解析 proxy_pass 的主机名，解析不到就退出，
+    # 故必须等 backend 就绪（而非仅创建容器）后再起
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # 宿主机 8081 → 容器 80；80 被占用时改这里即可，前端 /api 路径不受影响
+      - "8081:80"
+    # 健康检查已在 admin-web/Dockerfile 内用 HEALTHCHECK 声明，此处不重复定义
 
   # -------------------------------------------------------------------
   # 以下为「本地自建基础设施」备份定义，默认不启动（仅 --profile infra 时启用）
