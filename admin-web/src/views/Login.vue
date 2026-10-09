@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -79,6 +80,8 @@ async function handleLogin(): Promise<void> {
 
       <div class="login-tip">开发环境默认账号：admin / admin123（见后端 application-dev.yml）</div>
     </div>
+
+    <IcpFooter dark class="login-icp" />
   </div>
 </template>
 
@@ -92,6 +95,13 @@ async function handleLogin(): Promise<void> {
   padding: var(--gap-6);
   overflow: hidden;
   box-sizing: border-box;
+}
+
+.login-icp {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .login-bg {

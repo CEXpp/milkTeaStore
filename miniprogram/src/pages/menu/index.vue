@@ -6,6 +6,7 @@ import { useCartStore } from '@/stores/cart'
 import { useA11yStore } from '@/stores/a11y'
 import ProductCard from '@/components/ProductCard.vue'
 import SpecSheet from '@/components/SpecSheet.vue'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 菜单页（T25，LLD 8.2 / T45 11.4）：
@@ -246,6 +247,8 @@ onShow(() => {
         <view class="empty-sub" @click="load(false)">点击重试</view>
       </view>
     </view>
+
+    <IcpFooter />
 
     <!-- 拼单入口（T64，W13）：发起 / 加入。与购物车同属「攒意图」的入口，故同排 -->
     <view class="group-entry">

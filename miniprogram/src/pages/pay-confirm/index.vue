@@ -9,6 +9,7 @@ import { ApiError } from '@/utils/request'
 import { formatCents } from '@/utils/money'
 import { fromCompactDateTime } from '@/utils/datetime'
 import { requestSubscribeQuota } from '@/utils/wx-subscribe'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 支付确认页（T26，LLD 5.2「前端支付 UI 流三渠道统一」）：
@@ -185,6 +186,8 @@ function cancel(): void {
       <view class="empty-text">订单加载失败</view>
       <view class="empty-sub" @click="goMenu">回菜单重新下单</view>
     </view>
+
+    <IcpFooter />
   </view>
 </template>
 

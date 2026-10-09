@@ -4,6 +4,7 @@ import { onReachBottom, onShow } from '@dcloudio/uni-app'
 import { getActiveOrders, getOrderHistory, getOrderStatus, type OrderListItem } from '@/api/order'
 import { statusLabel, STATUS_TYPE } from '@/utils/order-status'
 import { useA11yStore } from '@/stores/a11y'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 订单 Tab（T27，LLD 8.2 / T45 11.4）：
@@ -197,6 +198,8 @@ function badgeClass(status: string): string {
       <view class="empty-text">暂无订单</view>
       <view class="empty-sub" @click="goMenu">去菜单挑一杯</view>
     </view>
+
+    <IcpFooter />
   </view>
 </template>
 

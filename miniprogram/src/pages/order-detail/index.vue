@@ -20,6 +20,7 @@ import { isActiveStatus, isTerminalStatus, statusLabel, STATUS_TYPE } from '@/ut
 import { issueDelegate, revokeDelegate } from '@/api/delegate'
 import { useA11yStore } from '@/stores/a11y'
 import { vibratePickupReady } from '@/utils/pickup-remind'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 订单详情（取餐码页，T27，LLD 8.2 / 4.4 / T43 11.1 / T45 11.4）：
@@ -626,6 +627,8 @@ function continuePay(): void {
       <view class="empty-text">订单加载失败</view>
       <view class="empty-sub" @click="goOrders">返回订单列表</view>
     </view>
+
+    <IcpFooter />
   </view>
 </template>
 
