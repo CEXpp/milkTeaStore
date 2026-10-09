@@ -46,7 +46,7 @@ management:
 # 微信小程序（T05）：appid/secret 全部走配置，不硬编码；生产建议用环境变量 WX_SECRET 注入
 # appid 取自 manifest.json（wxcd3beb616feadd06）；secret 为小程序「开发管理-开发设置」中的 AppSecret
 wx:
-  appid: "wxcd3beb616feadd06"
+  appid: ${APP_ID}
   secret: "${WX_SECRET:}"   # 本地联调用 dev-login 通道即可；真实 wx.login 需在此填入 AppSecret（或注入环境变量 WX_SECRET）
   # 订阅消息推送（T44）：默认关闭。未配置模板 ID 时前端不弹授权、后端不下发（SRS 9.3 降级），
   # 关闭状态下全链路静默短路，不影响下单/支付/取餐任何主流程。
