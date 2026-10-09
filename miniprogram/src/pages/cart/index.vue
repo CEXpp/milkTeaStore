@@ -10,6 +10,7 @@ import { ApiError, CODE_SHOP_PAUSED, CODE_PRODUCT_UNAVAILABLE } from '@/utils/re
 import { formatCents } from '@/utils/money'
 import { toCompactDateTime } from '@/utils/datetime'
 import { requestSubscribeQuota } from '@/utils/wx-subscribe'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 购物车页（T26，LLD 8.2 / T45 11.4 / T47 下单前预期管理）：
@@ -271,6 +272,8 @@ async function checkout(): Promise<void> {
         </view>
       </view>
     </template>
+
+    <IcpFooter />
   </view>
 </template>
 

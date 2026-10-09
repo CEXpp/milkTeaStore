@@ -5,6 +5,7 @@ import { redeemDelegate, type DelegatePickup } from '@/api/delegate'
 import { ApiError } from '@/utils/request'
 import { STATUS_TEXT } from '@/utils/order-status'
 import { useA11yStore } from '@/stores/a11y'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 代取凭证页（T65，C4e · W15）。
@@ -92,6 +93,8 @@ function backHome(): void {
         <text class="empty-sub" @click="backHome">返回首页</text>
       </view>
     </template>
+
+    <IcpFooter />
   </view>
 </template>
 

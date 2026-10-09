@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminSidebar from './AdminSidebar.vue'
 import AdminTopbar from './AdminTopbar.vue'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 后台统一外壳：深蓝灰侧栏 + 顶栏 + 内容区。
@@ -56,6 +57,8 @@ onBeforeUnmount(() => {
           </router-view>
         </div>
       </main>
+
+      <IcpFooter />
     </div>
   </div>
 </template>

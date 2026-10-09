@@ -19,6 +19,7 @@ import { useA11yStore } from '@/stores/a11y'
 import { useSpeechStore } from '@/stores/speech'
 import MessageBubble from '@/components/ai/MessageBubble.vue'
 import DraftCard from '@/components/ai/DraftCard.vue'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * AI 点单页（T33，SRS 5.1 / LLD 3.4 / T45 11.4）：
@@ -282,6 +283,8 @@ async function handlePay(): Promise<void> {
         <view class="speech-switch-dot" />
       </view>
     </view>
+
+    <IcpFooter />
   </view>
 </template>
 

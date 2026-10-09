@@ -13,6 +13,7 @@ import {
 import { getMenu, type MenuProduct } from '@/api/menu'
 import { useCartStore } from '@/stores/cart'
 import { useA11yStore } from '@/stores/a11y'
+import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
  * 拼单页（T64，W13/W14）：
@@ -294,6 +295,8 @@ function goMenu(): void {
     </template>
 
     <view v-else class="page-tip">拼单不存在或已结束</view>
+
+    <IcpFooter />
   </view>
 </template>
 
