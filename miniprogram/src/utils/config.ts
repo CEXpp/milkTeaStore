@@ -12,7 +12,9 @@
  * 该开关是初学者最容易踩的坑：urlCheck 为 true 时，http:// 请求会被开发者工具直接拦截，
  * 表现为「登录失败 / 请求发不出去」，而后端日志里什么都看不到。
  */
-export const BASE_URL = 'http://localhost:8080'
+
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+
 
 /**
 
