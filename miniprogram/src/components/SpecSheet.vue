@@ -216,21 +216,21 @@ function confirm(): void {
   margin-top: 8rpx;
   font-size: 30rpx;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .sheet-spec {
   margin-left: 12rpx;
   font-size: 22rpx;
   font-weight: 400;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .sheet-close {
   padding: 0 8rpx;
   font-size: 44rpx;
   line-height: 1;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .sheet-body {
@@ -246,7 +246,7 @@ function confirm(): void {
 .group-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
   margin-bottom: 16rpx;
 }
 
@@ -254,7 +254,7 @@ function confirm(): void {
   margin-left: 10rpx;
   font-size: 22rpx;
   font-weight: 400;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .pill-wrap {
@@ -267,26 +267,26 @@ function confirm(): void {
   padding: 12rpx 28rpx;
   font-size: 26rpx;
   color: #606266;
-  background: #f5f6f8;
-  border: 1rpx solid #f5f6f8;
+  background: var(--c-bg);
+  border: 1rpx solid var(--c-bg);
   border-radius: 999rpx;
 }
 
 .pill-active {
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
-  border-color: #409eff;
+  border-color: var(--c-primary);
 }
 
 .pill-delta {
   font-size: 22rpx;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .no-spec {
   padding: 32rpx 0;
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .sheet-footer {
@@ -308,7 +308,7 @@ function confirm(): void {
   line-height: 52rpx;
   text-align: center;
   font-size: 32rpx;
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
   border-radius: 50%;
 }
@@ -326,11 +326,11 @@ function confirm(): void {
   text-align: center;
   font-size: 30rpx;
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 999rpx;
 }
 
 .submit-btn-disabled {
-  background: #c0c4cc;
+  background: var(--c-text-sub);
 }
 </style>

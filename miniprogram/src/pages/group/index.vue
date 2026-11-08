@@ -304,7 +304,7 @@ function goMenu(): void {
 .group-page {
   min-height: 100vh;
   padding: 24rpx;
-  background: #f5f6f8;
+  background: var(--c-bg);
 }
 
 /* 阶段条：颜色即语义，收单中偏蓝、冻结偏黄、失效偏灰 */
@@ -362,7 +362,7 @@ function goMenu(): void {
   margin-bottom: 16rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .member-block {
@@ -390,7 +390,7 @@ function goMenu(): void {
   gap: 12rpx;
   padding: 6rpx 0;
   font-size: 24rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .item-name {
@@ -430,7 +430,7 @@ function goMenu(): void {
 
 .product-name {
   font-size: 26rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .product-price {

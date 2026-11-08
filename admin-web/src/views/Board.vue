@@ -128,44 +128,29 @@ function shallowEqual(a: object, b: object): boolean {
  * 引用不变时 Vue 在 patch 阶段判定 props 未变，卡片组件不会重渲染；
  * 任一字段变化则生成新引用，保证界面一定刷新。
  */
-function mergePending(list: OrderBoardResult['pending']): {
-  list: OrderBoardResult['pending']
-  changed: boolean
-} {
+function mergeOrders<T extends { orderId: number }>(
+  list: T[],
+  previous: T[] | undefined,
+  cache: Map<number, T>
+): { list: T[]; changed: boolean } {
   let changed = false
   const merged = list.map((next) => {
-    const prev = pendingCache.get(next.orderId)
+    const prev = cache.get(next.orderId)
     if (prev && shallowEqual(prev, next)) return prev
-    pendingCache.set(next.orderId, next)
+    cache.set(next.orderId, next)
     changed = true
     return next
   })
-  for (const id of [...pendingCache.keys()]) {
-    if (!list.some((order) => order.orderId === id)) {
-      pendingCache.delete(id)
+  const currentIds = new Set(list.map((order) => order.orderId))
+  for (const id of cache.keys()) {
+    if (!currentIds.has(id)) {
+      cache.delete(id)
       changed = true
     }
   }
-  return { list: merged, changed }
-}
-
-function mergePreparing(list: OrderBoardResult['preparing']): {
-  list: OrderBoardResult['preparing']
-  changed: boolean
-} {
-  let changed = false
-  const merged = list.map((next) => {
-    const prev = preparingCache.get(next.orderId)
-    if (prev && shallowEqual(prev, next)) return prev
-    preparingCache.set(next.orderId, next)
+  // 内容相同但排序改变时也必须更新数组，否则页面仍显示旧顺序。
+  if (previous?.length !== list.length || previous.some((order, index) => order.orderId !== list[index].orderId)) {
     changed = true
-    return next
-  })
-  for (const id of [...preparingCache.keys()]) {
-    if (!list.some((order) => order.orderId === id)) {
-      preparingCache.delete(id)
-      changed = true
-    }
   }
   return { list: merged, changed }
 }
@@ -184,9 +169,13 @@ function pruneHighlight(now: number): void {
 }
 
 /** 拉取看板：差集判定新单 → 播提示音 + 高亮。 */
+let refreshVersion = 0
 async function refreshBoard(): Promise<void> {
+  const version = ++refreshVersion
   try {
     const data = await getOrderBoard()
+    // SSE、轮询和操作后的刷新可能并发，迟到的旧响应不能覆盖较新的看板。
+    if (version !== refreshVersion || !active) return
     const now = Date.now()
     const pendingIds = new Set(data.pending.map((order) => order.orderId))
     if (knownPendingIds) {
@@ -207,8 +196,8 @@ async function refreshBoard(): Promise<void> {
     sla.value = data.sla ?? sla.value
 
     const prev = board.value
-    const pending = mergePending(data.pending)
-    const preparing = mergePreparing(data.preparing)
+    const pending = mergeOrders(data.pending, prev?.pending, pendingCache)
+    const preparing = mergeOrders(data.preparing, prev?.preparing, preparingCache)
     const todayChanged =
       prev === null ||
       prev.today.amount !== data.today.amount ||
@@ -385,6 +374,8 @@ function startRealtime(): void {
 
 /** 关闭实时通道（SSE 与轮询一并停掉） */
 function closeRealtime(): void {
+  // 页面隐藏或失活后，忽略尚未返回的请求。
+  refreshVersion += 1
   sseSub?.close()
   sseSub = null
   usingPolling = false

@@ -217,13 +217,13 @@ function badgeClass(status: string): string {
   margin-bottom: 16rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .section-empty {
   padding: 32rpx;
   font-size: 26rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
   text-align: center;
   background: #fff;
   border-radius: 16rpx;
@@ -250,12 +250,12 @@ function badgeClass(status: string): string {
 .code-text {
   font-size: 40rpx;
   font-weight: 700;
-  color: #409eff;
+  color: var(--c-primary);
   font-family: 'Consolas', 'Menlo', monospace;
 }
 
 .code-pending {
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .badge {
@@ -265,7 +265,7 @@ function badgeClass(status: string): string {
 }
 
 .badge-primary {
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
 }
 
@@ -275,17 +275,17 @@ function badgeClass(status: string): string {
 }
 
 .badge-warning {
-  color: #e6a23c;
-  background: #fdf6ec;
+  color: var(--c-warning);
+  background: var(--c-bg-warm);
 }
 
 .badge-info {
-  color: #909399;
+  color: var(--c-text-sub);
   background: #f4f4f5;
 }
 
 .badge-danger {
-  color: #f56c6c;
+  color: var(--c-danger);
   background: #fef0f0;
 }
 
@@ -308,19 +308,19 @@ function badgeClass(status: string): string {
 
 .foot-time {
   font-size: 22rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .foot-amount {
   font-size: 28rpx;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .list-foot {
   padding: 24rpx;
   font-size: 24rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
   text-align: center;
 }
 </style>

@@ -193,7 +193,7 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 
 .draft-count {
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .draft-line {
@@ -217,14 +217,14 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 .line-options {
   margin-top: 6rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 /* T71 规格理解回显：比规格组醒目一档——这是「AI 听到的」，要让人先看它 */
 .line-echo {
   margin-top: 8rpx;
   font-size: 24rpx;
-  color: #409eff;
+  color: var(--c-primary);
 }
 
 /* T71 规格组：整行可点，右侧「›」明示可改；不给「点了没反应」的假入口 */
@@ -246,12 +246,12 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 .spec-group-name {
   flex-shrink: 0;
   font-size: 22rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .spec-group-value {
   font-size: 24rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .line-price {
@@ -282,7 +282,7 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 }
 
 .step-btn.disabled {
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .step-value {
@@ -294,11 +294,11 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 .remove-btn {
   margin-left: 20rpx;
   font-size: 26rpx;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .remove-btn.disabled {
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .draft-footer {
@@ -316,18 +316,18 @@ function openSpecPicker(item: AiDraftItem, group: MenuSpecGroup): void {
 .total-amount {
   font-size: 36rpx;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .pay-btn {
   padding: 12rpx 32rpx;
   border-radius: 32rpx;
-  background: #409eff;
+  background: var(--c-primary);
   color: #fff;
   font-size: 28rpx;
 }
 
 .pay-btn.disabled {
-  background: #a0cfff;
+  background: var(--c-primary-light);
 }
 </style>

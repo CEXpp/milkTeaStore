@@ -679,7 +679,7 @@ function continuePay(): void {
 }
 
 .eta-key {
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .eta-val {
@@ -689,7 +689,7 @@ function continuePay(): void {
 .eta-note {
   margin-top: 10rpx;
   line-height: 1.6;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 /* 到店预约快捷项（T51）：3 / 5 / 10 分钟，可改可撤 */
@@ -708,18 +708,18 @@ function continuePay(): void {
 
 .eta-chip {
   padding: 10rpx 26rpx;
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
   border-radius: 999rpx;
 }
 
 .eta-chip-active {
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
 }
 
 .eta-chip-clear {
-  color: #909399;
+  color: var(--c-text-sub);
   background: #f4f4f5;
 }
 
@@ -730,7 +730,7 @@ function continuePay(): void {
   font-size: 30rpx;
   text-align: center;
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 999rpx;
 }
 
@@ -748,7 +748,7 @@ function continuePay(): void {
 
 .code-label {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
   letter-spacing: 4rpx;
 }
 
@@ -757,7 +757,7 @@ function continuePay(): void {
   font-size: 132rpx;
   font-weight: 700;
   line-height: 1.1;
-  color: #409eff;
+  color: var(--c-primary);
   font-family: 'Consolas', 'Menlo', monospace;
 }
 
@@ -769,7 +769,7 @@ function continuePay(): void {
 }
 
 .status-primary {
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
 }
 
@@ -779,24 +779,24 @@ function continuePay(): void {
 }
 
 .status-warning {
-  color: #e6a23c;
-  background: #fdf6ec;
+  color: var(--c-warning);
+  background: var(--c-bg-warm);
 }
 
 .status-info {
-  color: #909399;
+  color: var(--c-text-sub);
   background: #f4f4f5;
 }
 
 .status-danger {
-  color: #f56c6c;
+  color: var(--c-danger);
   background: #fef0f0;
 }
 
 .code-tip {
   margin-top: 20rpx;
   font-size: 24rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .card {
@@ -858,17 +858,17 @@ function continuePay(): void {
 
 .tl-label {
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .tl-time {
   margin-top: 4rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .tl-dur {
   margin-top: 4rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .tl-compare {
@@ -884,21 +884,21 @@ function continuePay(): void {
   justify-content: space-between;
   padding: 12rpx 0;
   font-size: 26rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .info-label {
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .info-amount {
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .goods-line {
   padding: 16rpx 0;
-  border-top: 1rpx solid #f5f6f8;
+  border-top: 1rpx solid var(--c-bg);
 }
 
 .goods-main {
@@ -914,19 +914,19 @@ function continuePay(): void {
 
 .goods-qty {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .goods-spec {
   margin-top: 6rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .goods-amount {
   margin-top: 6rpx;
   font-size: 26rpx;
-  color: #f56c6c;
+  color: var(--c-danger);
   text-align: right;
 }
 
@@ -989,6 +989,6 @@ function continuePay(): void {
 
 .action-primary {
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
 }
 </style>

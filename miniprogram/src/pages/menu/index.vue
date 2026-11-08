@@ -334,12 +334,12 @@ onShow(() => {
 .a11y-bar-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .a11y-bar-desc {
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .a11y-switch {
@@ -398,13 +398,13 @@ onShow(() => {
   padding: 10rpx 28rpx;
   font-size: 26rpx;
   color: #606266;
-  background: #f5f6f8;
+  background: var(--c-bg);
   border-radius: 999rpx;
 }
 
 .nav-item-active {
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
 }
 
 .product-list {
@@ -419,13 +419,13 @@ onShow(() => {
   margin: 8rpx 0 16rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .category-empty {
   padding: 24rpx;
   font-size: 24rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
   text-align: center;
   background: #fff;
   border-radius: 16rpx;
@@ -473,7 +473,7 @@ onShow(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 50%;
   box-shadow: 0 8rpx 24rpx rgba(64, 158, 255, 0.4);
 }
@@ -493,7 +493,7 @@ onShow(() => {
   text-align: center;
   font-size: 24rpx;
   color: #fff;
-  background: #f56c6c;
+  background: var(--c-danger);
   border-radius: 999rpx;
 }
 
@@ -518,19 +518,19 @@ onShow(() => {
 .pause-title {
   font-size: 40rpx;
   font-weight: 700;
-  color: #e6a23c;
+  color: var(--c-warning);
 }
 
 .pause-notice {
   margin-top: 20rpx;
   font-size: 28rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .pause-sub {
   margin-top: 12rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .pause-refresh {
@@ -539,7 +539,7 @@ onShow(() => {
   line-height: 72rpx;
   font-size: 28rpx;
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 999rpx;
 }
 </style>

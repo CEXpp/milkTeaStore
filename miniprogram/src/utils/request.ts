@@ -194,6 +194,11 @@ async function send<T>(options: RequestOptions, retried: boolean): Promise<T> {
   }
 
   const body = res.body
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    const message = body?.message || `请求失败（HTTP ${res.statusCode}）`
+    toast(message)
+    throw new ApiError(body?.code || res.statusCode, message, body?.data)
+  }
   if (!body || typeof body.code !== 'number') {
     toast('响应格式异常')
     throw new ApiError(-1, '响应格式异常：缺少统一响应体')

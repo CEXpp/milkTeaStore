@@ -45,14 +45,14 @@ function copyBeianUrl(url: string): void {
 .icp-text {
   font-size: 22rpx;
   line-height: 1.5;
-  color: #909399;
+  color: var(--c-text-sub);
   text-align: center;
 }
 
 .icp-divider {
   margin: 0 12rpx;
   font-size: 22rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .icp-ga {

@@ -300,14 +300,14 @@ async function checkout(): Promise<void> {
 .eta-value {
   font-size: 40rpx;
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .eta-range {
   margin-top: 8rpx;
   font-size: 24rpx;
   line-height: 1.6;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .eta-remind {
@@ -316,13 +316,13 @@ async function checkout(): Promise<void> {
   line-height: 72rpx;
   font-size: 28rpx;
   text-align: center;
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
   border-radius: 999rpx;
 }
 
 .eta-remind-busy {
-  color: #909399;
+  color: var(--c-text-sub);
   background: #f4f4f5;
 }
 
@@ -340,12 +340,12 @@ async function checkout(): Promise<void> {
 
 .header-title {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .header-clear {
   font-size: 26rpx;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .cart-list {
@@ -378,13 +378,13 @@ async function checkout(): Promise<void> {
 .line-spec {
   margin-top: 8rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .line-price {
   font-size: 30rpx;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .line-remark {
@@ -395,7 +395,7 @@ async function checkout(): Promise<void> {
   height: 64rpx;
   padding: 0 20rpx;
   font-size: 26rpx;
-  background: #f5f6f8;
+  background: var(--c-bg);
   border-radius: 12rpx;
 }
 
@@ -408,7 +408,7 @@ async function checkout(): Promise<void> {
 
 .line-remove {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .qty {
@@ -422,7 +422,7 @@ async function checkout(): Promise<void> {
   line-height: 48rpx;
   text-align: center;
   font-size: 30rpx;
-  color: #409eff;
+  color: var(--c-primary);
   background: #ecf5ff;
   border-radius: 50%;
 }
@@ -454,18 +454,18 @@ async function checkout(): Promise<void> {
 
 .total-label {
   font-size: 22rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .total-amount {
   font-size: 40rpx;
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .total-tip {
   font-size: 20rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .checkout-btn {
@@ -475,7 +475,7 @@ async function checkout(): Promise<void> {
   text-align: center;
   font-size: 30rpx;
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 999rpx;
 }
 

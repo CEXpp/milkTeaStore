@@ -20,11 +20,12 @@ export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8
 
  * 登录通道开关（LLD 8.3：wx.login → jscode2session → JWT）。
  *
- * 练手期后端未配置微信 AppSecret（application-dev.yml 的 wx.secret 为空），
- * 走后端白名单里的 dev-login 联调通道；配置好 AppSecret 后置为 false，
- * 即切换为真实的 uni.login → POST /api/customer/login，调用方代码不变。
+ * 开发构建默认使用 dev-login；生产构建默认走微信登录。
+ * VITE_USE_DEV_LOGIN 可显式覆盖，线上部署须保持 false 并使用非 dev 后端 profile。
  */
-export const USE_DEV_LOGIN = true
+export const USE_DEV_LOGIN = import.meta.env.VITE_USE_DEV_LOGIN === undefined
+  ? import.meta.env.DEV
+  : import.meta.env.VITE_USE_DEV_LOGIN === 'true'
 
 /** 请求超时（毫秒） */
 export const REQUEST_TIMEOUT = 15000

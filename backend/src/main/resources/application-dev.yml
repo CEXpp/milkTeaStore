@@ -3,7 +3,13 @@
 spring:
   config:
     import:
+      # 两条候选路径是刻意的：`spring.config.import` 的 file: 是**相对工作目录**的，
+      # 而 spring-boot-maven-plugin 的 workingDirectory 默认是 ${project.basedir}（即 backend/）。
+      # 于是只写 file:backend/.env 时，从 backend/ 启动会去找 backend/backend/.env ——
+      # 因为标了 optional 便静默跳过，悄悄回落到下面的 localhost 默认值，
+      # 最终表现为「数据库连不上 / Access denied for root@localhost」而看不出是配置没加载。
       - optional:file:backend/.env[.properties]
+      - optional:file:.env[.properties]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # allowPublicKeyRetrieval=true 必须加：MySQL 8 默认 caching_sha2_password，
@@ -168,5 +174,63 @@ ai:
   # 会话无活动过期时长（分钟）：LLD 6.5 / HLD
   session-timeout-minutes: 30
   # 按顾客限流（T31，LLD 9.2「chat 接口按顾客维度限流 10 次/分钟，内存滑动窗口」）：
-  # 超出返回 code=1009，保护免费档模型额度（HLD 风险 R2）
+  # 超出返回 code=1009，保护免费档模型额度（HLD 风险 R2）。流式与非流式共用同一份额度。
   rate-limit-per-minute: 10
+  # 流式对话（POST /api/customer/ai/chat/stream，SSE）
+  stream:
+    # 整体超时（秒）：决策 + 表述两条分支加起来必须在此预算内给出结论并关闭连接。
+    # 看门狗保证「无论中间哪一跳卡住」，这一轮都一定在预算内收尾。
+    timeout-seconds: ${AI_STREAM_TIMEOUT_SECONDS:20}
+    # 首字闸门（毫秒）：推 decision/card 之前，等承接话术的首个增量最多这么久。
+    # 作用是保证「先出文字、后出卡」的观感；旁白结束或失败即放行，不会真的等满。
+    first-delta-gate-millis: ${AI_STREAM_FIRST_DELTA_GATE_MS:2000}
+    # 编排线程池大小：一轮对话同时占用两个线程（旁白 + 决策），故它是「并发轮数」的两倍。
+    # 上限 64 保护机器，单店场景默认 8 足够。
+    pool-size: ${AI_STREAM_POOL_SIZE:8}
+    # 等待队列容量（有界）：满了直接拒绝并发 error 事件，而不是让请求排到连接超时。
+    # 一轮对话可能等满 timeout-seconds，故队列不宜过大（默认 32 约等于 16 轮排队）。
+    queue-capacity: ${AI_STREAM_QUEUE_CAPACITY:32}
+# Jev 决策层（TypeSafe AI 的 System One 模型）：定位是「决策层」而非「表述层」——
+# 它不产出自然语言、也不调用工具，只回答选择题（选哪杯/杯型/温度/甜度/加料/几杯），
+# 并给出校准置信度；话术生成与草稿编排仍由上面的 GLM 链路承担（分层而不替换）。
+# 与 ai.* 完全分离：两条链路可各自开关、各自配超时，谁挂了都不牵连对方。
+jev:
+  # 总开关（默认开，与 forecast.enabled 同风格）。注意真正发起请求还要求 api-key 非空，
+  # 因此没配密钥的环境不会白发一次 401——「关了」与「开着但没配全」在日志里可区分。
+  enabled: ${JEV_ENABLED:true}
+  base-url: ${JEV_BASE_URL:https://api.typesafe.ai}
+  # 密钥一律走 backend/.env 或环境变量 TYPESAFE_API_KEY，不入库不入前端
+  api-key: "${TYPESAFE_API_KEY:}"
+  # 官方唯一决策端点（所有 System One 模型共用，靠 body.model 路由）
+  path: /v1/systemone
+  # 钉版本号而非 jev-latest 别名：置信度阈值是针对具体版本调出来的，别名漂移会让阈值一夜失效
+  model: ${JEV_MODEL:jev-1.13.0}
+  # 连接超时（秒）
+  connect-timeout-seconds: 3
+  # 单次读超时（秒）：跨境外部依赖，宁可快速降级也不能让顾客盯着转圈
+  timeout-seconds: 8
+  # state 预算（估算口径，CJK 每字≈1 token、其余每 4 字符≈1 token）。
+  # 官方硬限为「state + 最长单问 ≤ 32k tokens」，此处留足余量；超出按菜单序截断尾部商品并告警。
+  max-state-tokens: 6000
+  # 置信度阈值：达到才程序化落草稿；低于它转 GLM 链路澄清（宁可多问一句，不可猜错下单）
+  confidence-threshold: 0.72
+  # 429/529/网络超时的退避重试（官方建议 1s→2s→4s 加 jitter）；
+  # 401/422 一律不重试（官方明确要求）
+  retry-max-attempts: 3
+  retry-base-millis: 1000
+  # 连续失败达该次数即熔断；冷却期内本地短路，不发起任何网络请求（含半开探测失败即重新熔断）
+  circuit-failure-threshold: 5
+  circuit-open-seconds: 60
+# 长期口味偏好（不进对话热路径的「记忆」实现）
+# 数据来源只有一条：已成交订单（PAID/PREPARING/COMPLETED）的规格快照，不解析对话内容。
+# 刷新有两个触发点：订单事件异步刷新 + 读取时的惰性补算（超过 stale-hours 才重算）。
+preference:
+  # 认定所需的最少订单数（分母按订单数、不按杯数）；低于它宁可不认定（防「一单定终身」）
+  min-sample-orders: 3
+  # 认定所需的频次占比：选项出现次数 / 组内订单数 ≥ 该值才认定。
+  # 单选组的占比天然互斥，故 0.6 时最多命中一项；多选组可能命中多项。
+  mode-ratio: 0.6
+  # 参与聚合的最近订单数上限（口味会变，远古订单不该绑架今天的选择）
+  window-orders: 50
+  # 惰性补算的过期时长（小时）：超过它才重算，避免每次进页面都扫两遍表
+  stale-hours: 24
