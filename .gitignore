@@ -1,5 +1,5 @@
-# Docker 本地真实凭据，禁止提交（.env.example 可提交）
-docker/.env
+# 本地真实凭据，禁止提交（.env.example 可提交）
+.env
 
 # IDE 产物，禁止提交
 .idea/
