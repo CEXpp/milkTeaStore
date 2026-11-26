@@ -19,7 +19,7 @@ import java.util.List;
  * 超时关单调度（T15，LLD 4.3）：每 60 秒把超时未支付的订单条件更新为 CLOSED。
  *
  * <p><b>原子防并发</b>：单条 {@code UPDATE orders SET status=CLOSED, closed_at=now
- * WHERE status=PENDING_PAYMENT AND created_at < now - timeout}——判定与写入在同一条
+ * WHERE status=PENDING_PAYMENT AND created_at ≤ now - timeout}——判定与写入在同一条
  * SQL 内完成，无 select-then-update 竞态；顾客恰在关单瞬间支付时，两方各自的条件更新
  * 只有一个能命中（支付为 PENDING_PAYMENT→PAID，关单为 PENDING_PAYMENT→CLOSED），
  * 另一方影响行数为 0 自然失败。</p>
@@ -54,7 +54,7 @@ public class OrderTimeoutJob {
         List<Long> candidates = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                         .select(Order::getId)
                         .eq(Order::getStatus, OrderStatus.PENDING_PAYMENT.name())
-                        .lt(Order::getCreatedAt, deadline))
+                        .le(Order::getCreatedAt, deadline))
                 .stream().map(Order::getId).toList();
         if (candidates.isEmpty()) {
             return;
@@ -62,7 +62,7 @@ public class OrderTimeoutJob {
 
         int closed = orderMapper.update(null, Wrappers.<Order>lambdaUpdate()
                 .eq(Order::getStatus, OrderStatus.PENDING_PAYMENT.name())
-                .lt(Order::getCreatedAt, deadline)
+                .le(Order::getCreatedAt, deadline)
                 .set(Order::getStatus, OrderStatus.CLOSED.name())
                 .set(Order::getClosedAt, now)
                 .set(Order::getUpdatedAt, now));
