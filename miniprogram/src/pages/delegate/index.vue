@@ -102,7 +102,7 @@ function backHome(): void {
 .delegate-page {
   min-height: 100vh;
   padding: 24rpx;
-  background: #f5f6f8;
+  background: var(--c-bg);
 }
 
 /* 取餐码卡：全页视觉重心，店员隔柜台也要能看清 */
@@ -119,7 +119,7 @@ function backHome(): void {
 
 .code-label {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .code-value {
@@ -130,7 +130,7 @@ function backHome(): void {
 
 .code-order {
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .code-status {
@@ -153,7 +153,7 @@ function backHome(): void {
   margin-bottom: 16rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .item-row {
@@ -171,12 +171,12 @@ function backHome(): void {
 .item-name {
   flex-shrink: 0;
   font-size: 26rpx;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .item-spec {
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .used-tip {
@@ -192,14 +192,14 @@ function backHome(): void {
   display: block;
   margin-top: 16rpx;
   font-size: 22rpx;
-  color: #909399;
+  color: var(--c-text-sub);
   text-align: center;
 }
 
 .page-tip {
   padding: 80rpx 0;
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
   text-align: center;
 }
 
@@ -225,7 +225,7 @@ function backHome(): void {
 
 .empty-text {
   font-size: 28rpx;
-  color: #303133;
+  color: var(--c-text);
   text-align: center;
 }
 

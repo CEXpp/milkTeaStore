@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
@@ -60,6 +61,12 @@ public class GlobalExceptionHandler {
     public <T> R<T> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
         log.warn("[T08] Upload size exceeded: {}", ex.getMessage());
         return R.fail(ErrorCode.FILE_TOO_LARGE.getCode(), ErrorCode.FILE_TOO_LARGE.getMessage());
+    }
+
+    /** SSE 等异步响应在客户端断开后已不可写，直接结束本次分派。 */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleUnusableAsyncResponse(AsyncRequestNotUsableException ex) {
+        log.debug("异步 HTTP 响应已不可写：{}", ex.getMessage());
     }
 
     /** 未知异常：code=500 服务器内部错误，记录完整堆栈。 */

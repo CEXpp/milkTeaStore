@@ -50,7 +50,7 @@ function open(): void {
   width: 160rpx;
   height: 160rpx;
   border-radius: 12rpx;
-  background: #f5f6f8;
+  background: var(--c-bg);
   flex-shrink: 0;
 }
 
@@ -59,7 +59,7 @@ function open(): void {
   align-items: center;
   justify-content: center;
   font-size: 24rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .info {
@@ -71,13 +71,13 @@ function open(): void {
 .name {
   font-size: 30rpx;
   font-weight: 600;
-  color: #303133;
+  color: var(--c-text);
 }
 
 .desc {
   margin-top: 8rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -92,13 +92,13 @@ function open(): void {
 .price {
   font-size: 32rpx;
   font-weight: 600;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .from {
   margin-left: 4rpx;
   font-size: 22rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .add-btn {
@@ -108,7 +108,7 @@ function open(): void {
   text-align: center;
   font-size: 36rpx;
   color: #fff;
-  background: #409eff;
+  background: var(--c-primary);
   border-radius: 50%;
   flex-shrink: 0;
 }

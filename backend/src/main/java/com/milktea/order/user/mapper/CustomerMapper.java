@@ -11,7 +11,7 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface CustomerMapper extends BaseMapper<Customer> {
 
-    @Select("SELECT id, openid, nickname, created_at, last_active_at " +
+    @Select("SELECT id, openid, nickname, avatar_key, created_at, last_active_at " +
             "FROM customer WHERE openid = #{openid}")
     Customer selectByOpenid(String openid);
 }

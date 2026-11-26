@@ -35,7 +35,7 @@ defineProps<{
   height: 64rpx;
   margin-right: 16rpx;
   border-radius: 50%;
-  background: #409eff;
+  background: var(--c-primary);
   color: #fff;
   font-size: 26rpx;
   line-height: 64rpx;
@@ -57,7 +57,7 @@ defineProps<{
 }
 
 .bubble-row.user .bubble {
-  background: #409eff;
+  background: var(--c-primary);
   color: #fff;
 }
 </style>

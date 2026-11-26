@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onUnload } from '@dcloudio/uni-app'
 import {
   aiChat,
   confirmAiOrder,
@@ -9,8 +9,10 @@ import {
   CODE_RATE_LIMITED,
   type AiDraft,
   type AiDraftItem,
-  type AiFallback
+  type AiChatResult
 } from '@/api/ai'
+import { chatStream, type AiStreamStage } from '@/api/aiStream'
+import { isChunkedSupported, type SseHandle } from '@/utils/sse'
 import { payOrder } from '@/api/order'
 import { getMenu, type MenuProduct } from '@/api/menu'
 import { ApiError } from '@/utils/request'
@@ -19,6 +21,7 @@ import { useA11yStore } from '@/stores/a11y'
 import { useSpeechStore } from '@/stores/speech'
 import MessageBubble from '@/components/ai/MessageBubble.vue'
 import DraftCard from '@/components/ai/DraftCard.vue'
+import StageIndicator from '@/components/ai/StageIndicator.vue'
 import IcpFooter from '@/components/IcpFooter.vue'
 
 /**
@@ -32,6 +35,13 @@ import IcpFooter from '@/components/IcpFooter.vue'
  *
  * 行内改量/删除之所以发一句自然语言而不是直接改本地数据：草稿只由后端 AI 工具集改写，
  * 且 confirm-order 用的就是服务端草稿——本地改会让卡片显示与实付金额不一致。
+ *
+ * ## 本轮改造：流式（先出文字、后出卡）
+ * 走 `POST /api/customer/ai/chat/stream`，事件契约见 {@link chatStream}：
+ * - 承接话术逐段追加进助手气泡（首字延迟由它决定）；
+ * - 阶段提示替换原来的「小茶正在想…」，由后端事件点亮；
+ * - 草稿卡到达后挂到气泡下方并触发语音播报；
+ * - **任何传输层故障都自动回退非流式接口**（`aiChat`），顾客不会因此点不了单。
  */
 
 /** 冷启动欢迎语与示例指令 */
@@ -61,9 +71,13 @@ const sessionId = ref<string | null>(null)
 const sending = ref(false)
 const paying = ref(false)
 const fallbackText = ref<string | null>(null)
+/** 当前决策阶段（流式事件驱动；null 表示不在等待中） */
+const stage = ref<AiStreamStage | null>(null)
 /** scroll-view 的锚点（最后一条消息的 id），用于自动滚到底部 */
 const lastAnchor = ref('')
 
+/** 当前流式通道（页面卸载或重新提问时断开） */
+let streamHandle: SseHandle | null = null
 let sequence = 0
 
 /** 只有欢迎语时展示示例指令，用户开口后收起 */
@@ -79,6 +93,12 @@ onShow(() => {
   }
 })
 
+onUnload(() => {
+  // 离开页面就断开流：否则后台还在收事件，回来时会看到它继续往旧气泡里写字
+  streamHandle?.abort()
+  streamHandle = null
+})
+
 /** 在售商品（扁平化）：供草稿卡按名称反查规格组与可选项（T71）。失败静默，只影响纠错入口。 */
 async function loadMenuForSpec(): Promise<void> {
   if (menuProducts.value.length) {
@@ -92,10 +112,36 @@ async function loadMenuForSpec(): Promise<void> {
   }
 }
 
-function appendMessage(message: Omit<ChatMessage, 'id'>): void {
+function appendMessage(message: Omit<ChatMessage, 'id'>): number {
   sequence += 1
-  messages.value.push({ id: sequence, ...message })
-  lastAnchor.value = `msg-${sequence}`
+  const id = sequence
+  messages.value.push({ id, ...message })
+  lastAnchor.value = `msg-${id}`
+  return id
+}
+
+/**
+ * 按 id 就地更新消息。
+ *
+ * <p>必须「按 id 找回数组里的那一项」再改：`ref([])` 里存的是深层响应式代理，
+ * 直接改 push 进去的那个原始对象不会触发视图更新。</p>
+ */
+function patchMessage(id: number, patch: Partial<ChatMessage>): void {
+  const target = messages.value.find((item) => item.id === id)
+  if (target) {
+    Object.assign(target, patch)
+  }
+}
+
+function removeMessage(id: number): void {
+  const index = messages.value.findIndex((item) => item.id === id)
+  if (index >= 0) {
+    messages.value.splice(index, 1)
+  }
+}
+
+function mention(id: number): void {
+  lastAnchor.value = `msg-${id}`
 }
 
 function goMenu(): void {
@@ -117,39 +163,145 @@ async function send(preset?: string): Promise<void> {
   appendMessage({ role: 'user', text: content })
 
   sending.value = true
+  stage.value = null
   const previousSessionId = sessionId.value
+  // 助手气泡先建出来：流式增量要往里追加，否则第一段文字到达时才「凭空插入一条消息」
+  const replyId = appendMessage({ role: 'assistant', text: '' })
+
   try {
-    const result = await aiChat(previousSessionId, content)
-    if (previousSessionId && result.sessionId !== previousSessionId) {
-      // 后端在会话过期时会新建会话（LLD 6.6 步骤 1），此时旧草稿已作废，提示重新点单
-      uni.showToast({ title: '会话已超时，已重新开始点单', icon: 'none' })
+    if (isChunkedSupported()) {
+      await sendStreaming(previousSessionId, content, replyId)
+    } else {
+      // 基础库不支持分块接收：直接走非流式接口，行为与升级前逐字一致
+      await sendOnce(previousSessionId, content, replyId)
     }
-    sessionId.value = result.sessionId
-    appendMessage({ role: 'assistant', text: result.text, draft: result.draft })
-    // 语音播报（T70）：只在 CARD（草稿算出来了）时播报，且金额直接取后端的
-    // draft.totalAmount —— 播报内容与卡片同源，不会出现「念的金额和显示的不一样」
+  } finally {
+    sending.value = false
+    stage.value = null
+    streamHandle = null
+    // 一个事件都没来（例如连接建立后被立刻断开）时不留空气泡
+    const reply = messages.value.find((item) => item.id === replyId)
+    if (reply && !reply.text && !reply.draft) {
+      removeMessage(replyId)
+    }
+  }
+}
+
+/** 流式路径：事件驱动地填充助手气泡；传输层故障自动回退非流式。 */
+async function sendStreaming(
+  previousSessionId: string | null,
+  content: string,
+  replyId: number
+): Promise<void> {
+  let accumulated = ''
+  let receivedAnyEvent = false
+  let transportFailed = false
+
+  try {
+    const handle = await chatStream(previousSessionId, content, {
+      onStage: (value) => {
+        receivedAnyEvent = true
+        stage.value = value
+      },
+      onDelta: (text) => {
+        receivedAnyEvent = true
+        accumulated += text
+        patchMessage(replyId, { text: accumulated })
+        mention(replyId)
+      },
+      onCard: (draft) => {
+        receivedAnyEvent = true
+        patchMessage(replyId, { draft })
+        mention(replyId)
+        // 播报内容与卡片同源（都取后端 draft），不会出现「念的和显示的不一样」
+        speech.say(buildSpeechText(draft))
+      },
+      onDone: (payload) => {
+        receivedAnyEvent = true
+        applySession(payload.sessionId, previousSessionId)
+      },
+      onError: (payload) => {
+        receivedAnyEvent = true
+        applyStreamError(payload.code, payload.fallbackText)
+      },
+      onInterrupted: () => {
+        transportFailed = true
+      },
+      onTransportError: () => {
+        transportFailed = true
+      }
+    })
+    streamHandle = handle
+    // 等这一轮真正说完，再放开输入框
+    await handle.completed
+  } catch (error) {
+    transportFailed = true
+    console.error('流式通道建立失败', error)
+  }
+
+  if (!transportFailed) {
+    return
+  }
+
+  // 传输层故障：一个事件都没收到时才回退（同一句话重发一次是可接受的代价），
+  // 已经收到半截回答再重发会让模型把同一句话看两遍——那时只提示，不重试。
+  if (!receivedAnyEvent) {
+    stage.value = null
+    await sendOnce(previousSessionId, content, replyId)
+    return
+  }
+  appendMessage({ role: 'assistant', text: '刚才连接断了一下，麻烦再说一次～' })
+}
+
+/** 非流式路径：一次性拿完整回复（基础库不支持分块时的正常通道，也是流式故障时的回退）。 */
+async function sendOnce(previousSessionId: string | null, content: string, replyId: number): Promise<void> {
+  try {
+    const result: AiChatResult = await aiChat(previousSessionId, content)
+    applySession(result.sessionId, previousSessionId)
+    patchMessage(replyId, { text: result.text, draft: result.draft })
+    mention(replyId)
     if (result.replyType === 'CARD' && result.draft) {
       speech.say(buildSpeechText(result.draft))
     }
   } catch (error) {
     handleChatError(error)
-  } finally {
-    sending.value = false
   }
+}
+
+/** 会话标识落地：后端在会话过期时会新建，此时旧草稿已作废，需要提示重新点单。 */
+function applySession(nextSessionId: string, previousSessionId: string | null): void {
+  if (previousSessionId && nextSessionId !== previousSessionId) {
+    uni.showToast({ title: '会话已超时，已重新开始点单', icon: 'none' })
+  }
+  sessionId.value = nextSessionId
+}
+
+/** 流式错误事件 → 既有错误分支（口径与非流式完全一致，避免两条链路两套话术）。 */
+function applyStreamError(code: number, fallback: string | null): void {
+  if (code === CODE_AI_UNAVAILABLE) {
+    fallbackText.value = fallback || DEFAULT_FALLBACK
+    return
+  }
+  if (code === CODE_RATE_LIMITED) {
+    appendMessage({ role: 'assistant', text: '问得有点快啦，歇一分钟再聊～' })
+    return
+  }
+  appendMessage({ role: 'assistant', text: '抱歉，刚才点单服务出了点问题，请再试一次～' })
 }
 
 /** 对话失败分支：降级（1008）/ 限流（1009）/ 其它（request 层已弹提示，这里补一句保持对话连续）。 */
 function handleChatError(error: unknown): void {
   if (error instanceof ApiError) {
     if (error.code === CODE_AI_UNAVAILABLE) {
-      const fallback = (error.data as AiFallback | undefined)?.fallbackText
-      fallbackText.value = fallback || DEFAULT_FALLBACK
+      applyStreamError(error.code, (error.data as { fallbackText?: string } | undefined)?.fallbackText ?? null)
       return
     }
-    if (error.code === CODE_RATE_LIMITED) {
-      appendMessage({ role: 'assistant', text: '问得有点快啦，歇一分钟再聊～' })
-      return
-    }
+    applyStreamError(error.code, null)
+    return
+  }
+  if (error instanceof Error) {
+    appendMessage({ role: 'assistant', text: '抱歉，刚才点单服务出了点问题，请再试一次～' })
+    return
   }
   // 兜底文案必须说「服务出问题了」，不能说「没听清」——后者会让人以为是模型听不懂，
   // 而实际情况通常是后端异常（如数据库死锁 / 500），本轮模型压根没被调起来。
@@ -227,7 +379,7 @@ async function handlePay(): Promise<void> {
     <!-- 1008 降级横幅（AC-13）：模型不可用时引导回菜单手动点单 -->
     <view v-if="fallbackText" class="fallback-banner">
       <text class="fallback-text">{{ fallbackText }}</text>
-      <view class="fallback-btn" @tap="goMenu">去菜单点单</view>
+      <view class="fallback-btn tap" @tap="goMenu">去菜单点单</view>
     </view>
 
     <scroll-view class="msg-list" scroll-y :scroll-into-view="lastAnchor" :scroll-with-animation="true">
@@ -244,12 +396,13 @@ async function handlePay(): Promise<void> {
           @pay="handlePay"
         />
       </view>
-      <view v-if="sending" class="typing">小茶正在想…</view>
+      <!-- 阶段提示取代原来那句「小茶正在想…」：等待时间是可解释的，就把它解释出来 -->
+      <StageIndicator v-if="sending" :stage="stage" />
     </scroll-view>
 
     <!-- 冷启动示例指令：说一句就能点单 -->
     <view v-if="showExamples" class="examples">
-      <view v-for="example in EXAMPLES" :key="example" class="example-chip" @tap="send(example)">
+      <view v-for="example in EXAMPLES" :key="example" class="example-chip tap" @tap="send(example)">
         {{ example }}
       </view>
     </view>
@@ -262,7 +415,7 @@ async function handlePay(): Promise<void> {
         confirm-type="send"
         @confirm="send()"
       />
-      <view class="send-btn" :class="{ disabled: sending }" @tap="send()">发送</view>
+      <view class="send-btn tap" :class="{ disabled: sending }" @tap="send()">发送</view>
     </view>
     <view class="voice-hint a11y-sm">
       {{
@@ -275,7 +428,7 @@ async function handlePay(): Promise<void> {
     <!-- 语音播报开关（T70，输出侧）：只在环境具备 TTS 能力时出现。
          刻意与上面那行「输入侧」提示分开：一个是「你说」，一个是「它念」，
          混在一处会让人以为播报开关能控制麦克风。 -->
-    <view v-if="speech.available" class="speech-bar" @tap="speech.toggle()">
+    <view v-if="speech.available" class="speech-bar tap" @tap="speech.toggle()">
       <view class="speech-text a11y-sm">
         {{ speech.enabled ? 'AI 解析完成后会念出订单内容' : '语音播报已关闭' }}
       </view>
@@ -293,7 +446,7 @@ async function handlePay(): Promise<void> {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f6f8;
+  background: var(--c-bg);
 }
 
 .fallback-banner {
@@ -301,29 +454,29 @@ async function handlePay(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   padding: 16rpx 24rpx;
-  background: #fdf6ec;
-  border-bottom: 1rpx solid #f5dab1;
+  background: var(--c-bg-warm);
+  border-bottom: 1rpx solid var(--c-border);
 }
 
 .fallback-text {
   flex: 1;
   font-size: 26rpx;
-  color: #e6a23c;
+  color: var(--c-warning);
 }
 
 .fallback-btn {
   flex-shrink: 0;
   margin-left: 16rpx;
   padding: 10rpx 24rpx;
-  border-radius: 28rpx;
-  background: #e6a23c;
-  color: #fff;
+  border-radius: var(--r-pill);
+  background: var(--c-warning);
+  color: var(--c-text-inverse);
   font-size: 24rpx;
 }
 
 .msg-list {
   flex: 1;
-  padding: 24rpx;
+  padding: var(--s-card);
   box-sizing: border-box;
 }
 
@@ -331,42 +484,45 @@ async function handlePay(): Promise<void> {
   margin-bottom: 8rpx;
 }
 
-.typing {
-  padding: 8rpx 0 24rpx 80rpx;
-  font-size: 26rpx;
-  color: #909399;
-}
-
 .examples {
   display: flex;
   flex-wrap: wrap;
   gap: 16rpx;
-  padding: 0 24rpx 16rpx;
+  padding: 0 var(--s-card) 16rpx;
 }
 
 .example-chip {
   padding: 12rpx 20rpx;
-  border-radius: 32rpx;
-  background: #fff;
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
   font-size: 26rpx;
-  color: #409eff;
+  color: var(--c-primary);
+  box-shadow: var(--shadow-card);
 }
 
+/* 底部输入区：奶油底上浮的胶囊输入框，聚焦时描边转主色 */
 .input-bar {
   display: flex;
   align-items: center;
-  padding: 16rpx 24rpx;
-  background: #fff;
-  border-top: 1rpx solid #ebeef5;
+  padding: 16rpx var(--s-card);
+  background: var(--c-surface);
+  border-top: 1rpx solid var(--c-border);
 }
 
 .input {
   flex: 1;
   height: 72rpx;
   padding: 0 24rpx;
-  border-radius: 36rpx;
-  background: #f5f6f8;
+  border-radius: var(--r-pill);
+  background: var(--c-bg);
+  border: 2rpx solid transparent;
   font-size: 28rpx;
+  color: var(--c-text);
+  transition: border-color 160ms var(--ease);
+}
+
+.input:focus {
+  border-color: var(--c-primary-light);
 }
 
 .send-btn {
@@ -374,22 +530,22 @@ async function handlePay(): Promise<void> {
   margin-left: 16rpx;
   padding: 0 32rpx;
   height: 72rpx;
-  border-radius: 36rpx;
-  background: #409eff;
-  color: #fff;
+  border-radius: var(--r-pill);
+  background: var(--c-primary);
+  color: var(--c-text-inverse);
   font-size: 28rpx;
   line-height: 72rpx;
 }
 
 .send-btn.disabled {
-  background: #a0cfff;
+  background: var(--c-primary-light);
 }
 
 .voice-hint {
-  padding: 0 24rpx 20rpx;
-  background: #fff;
+  padding: 0 var(--s-card) 20rpx;
+  background: var(--c-surface);
   font-size: 22rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
   text-align: center;
 }
 
@@ -399,12 +555,12 @@ async function handlePay(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  padding: 16rpx 24rpx 24rpx;
-  background: #fff;
+  padding: 16rpx var(--s-card) 24rpx;
+  background: var(--c-surface);
 }
 
 .speech-text {
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .speech-switch {
@@ -413,22 +569,22 @@ async function handlePay(): Promise<void> {
   width: 84rpx;
   height: 44rpx;
   padding: 4rpx;
-  background: #e4e7ed;
+  background: var(--c-muted);
   border-radius: 22rpx;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s var(--ease);
 }
 
 .speech-switch-dot {
   width: 36rpx;
   height: 36rpx;
-  background: #fff;
+  background: var(--c-surface);
   border-radius: 50%;
-  box-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s;
+  box-shadow: 0 1rpx 3rpx rgba(61, 50, 41, 0.2);
+  transition: transform 0.2s var(--ease);
 }
 
 .speech-switch-on {
-  background: #409eff;
+  background: var(--c-primary);
 }
 
 .speech-switch-on .speech-switch-dot {

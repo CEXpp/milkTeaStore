@@ -177,6 +177,9 @@ jobs:
       - name: 构建验证（微信小程序）
         run: npm run build:mp-weixin
 
+      - name: 构建验证（顾客端 H5）
+        run: npm run build:h5
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:

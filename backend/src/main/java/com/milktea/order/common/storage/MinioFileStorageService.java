@@ -40,8 +40,6 @@ public class MinioFileStorageService implements FileStorageService {
             "image/jpg", ".jpg",
             "image/png", ".png",
             "image/webp", ".webp");
-    /** 对象 key 前缀，与 T08 约定的 menu/yyyyMM/uuid.ext 一致 */
-    private static final String KEY_PREFIX = "menu/";
     private static final DateTimeFormatter MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
@@ -50,8 +48,13 @@ public class MinioFileStorageService implements FileStorageService {
 
     @Override
     public FileUploadResult put(MultipartFile file) {
+        return put(file, DEFAULT_KEY_PREFIX);
+    }
+
+    @Override
+    public FileUploadResult put(MultipartFile file, String keyPrefix) {
         String extension = validate(file);
-        String key = buildKey(extension);
+        String key = buildKey(keyPrefix, extension);
         ensureBucket();
         try {
             minioClient.putObject(PutObjectArgs.builder()
@@ -106,8 +109,19 @@ public class MinioFileStorageService implements FileStorageService {
         return extension;
     }
 
-    private String buildKey(String extension) {
-        return KEY_PREFIX + YearMonth.now(ZONE).format(MONTH_FORMATTER) + "/" + UUID.randomUUID() + extension;
+    /**
+     * 组装对象 key：{@code <前缀>yyyyMM/uuid.ext}。
+     *
+     * <p>前缀做兜底归一，防止调用方传进 {@code "../"} 之类的片段把对象写到桶外目录，
+     * 也防止漏掉结尾斜杠导致 {@code avatar202610/…} 这种难以阅读的键。</p>
+     */
+    private String buildKey(String keyPrefix, String extension) {
+        String prefix = (keyPrefix == null || keyPrefix.isBlank()) ? DEFAULT_KEY_PREFIX : keyPrefix.trim();
+        if (!prefix.endsWith("/")) {
+            prefix = prefix + "/";
+        }
+        prefix = prefix.replace("..", "").replaceFirst("^/+", "");
+        return prefix + YearMonth.now(ZONE).format(MONTH_FORMATTER) + "/" + UUID.randomUUID() + extension;
     }
 
     /** 桶不存在则创建；桶已存在或权限不足时交由后续 putObject 暴露真实错误。 */

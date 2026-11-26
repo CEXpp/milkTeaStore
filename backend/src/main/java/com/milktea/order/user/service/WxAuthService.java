@@ -34,6 +34,9 @@ public class WxAuthService {
 
     /** 用登录 code 换取微信 openid；失败时抛出业务异常（PARAM_ERROR）。 */
     public String code2SessionOpenid(String code) {
+        if (appid.isBlank() || secret.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "未配置微信登录");
+        }
         WxSessionResp resp = wxClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .scheme("https")

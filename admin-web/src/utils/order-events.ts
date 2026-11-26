@@ -55,8 +55,11 @@ export function subscribeBoardEvents(handlers: BoardEventHandlers): BoardEventSu
   // EventSource 缺失（或未登录）直接降级：不抛错，交给调用方的轮询通道兜底。
   // 降级回调推迟到微任务，保证调用方先拿到返回句柄再收到 onFallback（避免赋值顺序歧义）。
   if (typeof EventSource === 'undefined' || !token) {
-    queueMicrotask(() => handlers.onFallback())
-    return { close: () => undefined }
+    let closed = false
+    queueMicrotask(() => {
+      if (!closed) handlers.onFallback()
+    })
+    return { close: () => { closed = true } }
   }
 
   let closed = false
@@ -90,7 +93,14 @@ export function subscribeBoardEvents(handlers: BoardEventHandlers): BoardEventSu
   function connect(): void {
     if (closed) return
     const url = `${EVENT_PATH}?token=${encodeURIComponent(token)}`
-    const current = new EventSource(url)
+    let current: EventSource
+    try {
+      current = new EventSource(url)
+    } catch {
+      // 保持与无 EventSource 时一致的异步回退，避免订阅句柄赋值前触发回调。
+      queueMicrotask(() => fallback())
+      return
+    }
     source = current
 
     // 建连超时：超时未 open 视为不可用（LLD 11.1 触发降级①）

@@ -1,5 +1,6 @@
 package com.milktea.order.ai.config;
 
+import com.milktea.order.ai.ChatNarrator;
 import com.milktea.order.ai.OrderAssistant;
 import com.milktea.order.ai.ShopCopilotAssistant;
 import com.milktea.order.ai.copilot.CopilotTrace;
@@ -14,6 +15,7 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +63,53 @@ public class LangChain4jConfig {
                 .modelName(model)
                 .temperature(temperature)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
+                .build();
+    }
+
+    /**
+     * 流式模型接入：与 {@link #chatModel} 同一套 {@code ai.*} 配置，只是走流式接口。
+     *
+     * <p>两个模型 Bean 并存是刻意的：非流式链路（订单助手、店长 Copilot、每日日报、备料建议）
+     * 一字不改，流式只用在新端点的旁白分支上。这样「流式改造」不会波及四条既有链路
+     * ——改动面越小，回归风险越小。</p>
+     *
+     * @param baseUrl        GLM 的 OpenAI 兼容端点
+     * @param apiKey         密钥（与 {@link #chatModel} 同源，缺省时不影响应用启动）
+     * @param model          模型名
+     * @param temperature    采样温度
+     * @param timeoutSeconds 单次流式响应超时秒数
+     */
+    @Bean
+    public OpenAiStreamingChatModel streamingChatModel(
+            @Value("${ai.base-url}") String baseUrl,
+            @Value("${ai.api-key:}") String apiKey,
+            @Value("${ai.model}") String model,
+            @Value("${ai.temperature:0.2}") double temperature,
+            @Value("${ai.timeout-seconds:10}") long timeoutSeconds) {
+        return OpenAiStreamingChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName(model)
+                .temperature(temperature)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .build();
+    }
+
+    /**
+     * 流式旁白层装配：<b>不挂工具、不挂记忆</b>。
+     *
+     * <p>不挂工具：写草稿是 {@code DraftOrderTool} 与决策层的事。旁白与决策是并发的两条分支，
+     * 若旁白手里也有工具，两条分支就可能同时改同一份草稿（后写覆盖先写），
+     * 而这个竞争既难复现也难排查。让旁白保持「只会说话」是并发正确性的前提。</p>
+     *
+     * <p>不挂记忆：旁白只输出一句承接话术，与历史无关；带上记忆反而可能让它把上一轮的
+     * 上下文带进来，出现「提前替决策说话」。同时这也让项目既有的
+     * {@code StartupWiringTest}「带 {@code @MemoryId} 的 AiService 恰好 2 个」断言继续成立。</p>
+     */
+    @Bean
+    public ChatNarrator chatNarrator(OpenAiStreamingChatModel streamingChatModel) {
+        return AiServices.builder(ChatNarrator.class)
+                .streamingChatModel(streamingChatModel)
                 .build();
     }
 

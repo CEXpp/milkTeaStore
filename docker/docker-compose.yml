@@ -14,7 +14,7 @@
 #   # 公网暴露：本机装 cpolar，隧道指向 8081（前端）即可，/api 由 nginx 内部转发
 #
 # 说明：mysql / minio 两个服务是「本地自建基础设施」的备份定义，默认不启动；
-#       仅当需要在本机起基础设施时用：docker compose --profile infra up -d
+#       如需单独启动基础设施：docker compose --profile infra up -d mysql minio
 # =====================================================================
 services:
   # -------------------------------------------------------------------
@@ -36,7 +36,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/actuator/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/actuator/health"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -74,10 +74,8 @@ services:
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      # 应用库 / 专用账号：与 LLD 对齐（此处沿用文档示例库名 demo_db）
-      MYSQL_DATABASE: demo_db
-      # MYSQL_USER: demo
-      # MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # 与 backend/.env.example 一致。已有数据卷继续使用原有数据库名。
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-milk_tea}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci

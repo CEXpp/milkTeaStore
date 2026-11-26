@@ -19,6 +19,14 @@
 			}
 		},
 		{
+			// 个人中心（本轮新增）：头像昵称、口味档案、常用入口、无障碍与语音开关。
+			// 是 Tab 而非页面栈跳转——它是「顾客自己的东西」的入口，应当一直可见
+			"path": "pages/mine/index",
+			"style": {
+				"navigationBarTitleText": "我的"
+			}
+		},
+		{
 			// 购物车为菜单页浮动球入口（页面栈跳转，非 Tab，LLD 8.1）
 			"path": "pages/cart/index",
 			"style": {
@@ -55,12 +63,16 @@
 			}
 		}
 	],
-	// TabBar 三项（LLD 8.1）：菜单 / AI 点单 / 订单；图标为模板占位（联调期替换正式图标）
+	// TabBar 四项（LLD 8.1 三项 + 本轮新增「我的」）：菜单 / AI 点单 / 订单 / 我的。
+	// 配色取自奶油暖调 design token（src/styles/tokens.ts）：
+	//   未选中 #8C8177（--c-text-sub）、选中 #C8845A（--c-primary）、底 #FFFFFF。
+	// 仍然保持纯文字（不配 iconPath）：仓库内没有正式图标资源，
+	// 与其塞一个不匹配的占位图，不如先让文字承担导航——换图标时只改这里。
 	"tabBar": {
-		"color": "#909399",
-		"selectedColor": "#409eff",
-		"backgroundColor": "#ffffff",
-		"borderStyle": "black",
+		"color": "#8C8177",
+		"selectedColor": "#C8845A",
+		"backgroundColor": "#FFFFFF",
+		"borderStyle": "white",
 		"list": [
 			{
 				"pagePath": "pages/menu/index",
@@ -73,13 +85,17 @@
 			{
 				"pagePath": "pages/order/index",
 				"text": "订单"
+			},
+			{
+				"pagePath": "pages/mine/index",
+				"text": "我的"
 			}
 		]
 	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "奶茶在线点单",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F5F6F8"
+		"navigationBarBackgroundColor": "#FFFBF5",
+		"backgroundColor": "#FFFBF5"
 	}
 }

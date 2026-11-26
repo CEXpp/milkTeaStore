@@ -205,6 +205,10 @@ public class OrderService {
         }
         // 状态机硬校验（T14，LLD 4.1）：仅 PENDING_PAYMENT 可支付成功；重复支付/已关闭/已作废均为 1004
         OrderStateMachine.next(OrderStateMachine.parse(order.getStatus()), OrderStateMachine.Event.PAY_SUCCESS);
+        // 调度尚未关单时，支付入口同样执行截止时间校验。
+        if (!LocalDateTime.now().isBefore(order.getCreatedAt().plusMinutes(paymentTimeoutMinutes))) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_CONFLICT.getCode(), "订单已超过支付期限");
+        }
 
         // 策略支付（Mock 立即成功；真店切微信只改配置与实现）
         PayResult result = paymentService.pay(orderId, order.getTotalAmount());

@@ -206,14 +206,14 @@ function cancel(): void {
 
 .amount-label {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .amount-value {
   margin: 16rpx 0;
   font-size: 76rpx;
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--c-danger);
 }
 
 .amount-order {
@@ -224,7 +224,7 @@ function cancel(): void {
 .amount-expire {
   margin-top: 8rpx;
   font-size: 22rpx;
-  color: #c0c4cc;
+  color: var(--c-text-sub);
 }
 
 .price-tip {
@@ -232,7 +232,7 @@ function cancel(): void {
   padding: 16rpx 24rpx;
   font-size: 24rpx;
   color: #b88230;
-  background: #fdf6ec;
+  background: var(--c-bg-warm);
   border-radius: 12rpx;
 }
 
@@ -245,7 +245,7 @@ function cancel(): void {
 
 .detail-line {
   padding: 16rpx 0;
-  border-bottom: 1rpx solid #f5f6f8;
+  border-bottom: 1rpx solid var(--c-bg);
 }
 
 .detail-line:last-child {
@@ -265,26 +265,26 @@ function cancel(): void {
 
 .detail-qty {
   font-size: 26rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .detail-spec {
   margin-top: 6rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .detail-amount {
   margin-top: 6rpx;
   font-size: 26rpx;
-  color: #f56c6c;
+  color: var(--c-danger);
   text-align: right;
 }
 
 .detail-remark {
   margin-top: 16rpx;
   font-size: 24rpx;
-  color: #909399;
+  color: var(--c-text-sub);
 }
 
 .pay-footer {

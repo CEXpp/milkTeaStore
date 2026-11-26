@@ -15,4 +15,12 @@ public class CustomerLoginVo {
     private String openid;
 
     private String nickname;
+
+    /**
+     * 头像代理路径 {@code /api/files/{key}}（本轮新增，向后兼容的追加字段）。
+     *
+     * <p>登录时一并回传，是为了让小程序启动即拿到头像，不必再多发一次资料请求
+     * ——个人中心的头部在弱网下少一次往返就少一次空白。</p>
+     */
+    private String avatarUrl;
 }

@@ -70,22 +70,37 @@ public class AiChatService {
         }
         AiSessionEntity session = sessionService.locateOrCreate(request.getSessionId(), customerId);
 
-        // 步骤 2：模型调用（模型自动多轮工具调用）
+        // 步骤 2~3：模型调用 + 组装响应
+        AiChatVo response = chatInSession(session, request.getMessage());
+
+        // 步骤 4：刷新过期时间
+        sessionService.refreshExpiry(session);
+        return response;
+    }
+
+    /**
+     * 已定位会话后的对话链路（步骤 2~3），<b>不含鉴权 / 限流 / 会话定位</b>。
+     *
+     * <p>抽出这个方法是为了让流式编排（T-stream）复用同一条链路：流式端点自己完成了
+     * 鉴权、限流与会话定位，若再调 {@link #chat(AiChatRequest)} 会把这套前置步骤做第二遍
+     * （限流被重复记账、会话被重复定位）。抽取后两条路径共用同一份模型调用与卡片组装逻辑，
+     * 口径不会各自漂移——这也是「非流式端点作为降级出口时行为与线上等价」的实现基础。</p>
+     *
+     * @param session 已定位的会话
+     * @param message 顾客输入
+     * @return TEXT 或 CARD 响应
+     * @throws BusinessException 模型不可用时 1008
+     */
+    public AiChatVo chatInSession(AiSessionEntity session, String message) {
         String reply;
         try {
-            reply = orderAssistant.chat(session.getSessionUuid(), request.getMessage());
+            reply = orderAssistant.chat(session.getSessionUuid(), message);
         } catch (Exception e) {
             // LLD 3.4 / LLD 6.6：模型超时或 HTTP 错误 → 1008 降级，不影响手动点单主链路
             log.warn("[T31] AI 模型调用失败，降级返回 1008：sessionUuid={}", session.getSessionUuid(), e);
             throw new BusinessException(ErrorCode.AI_UNAVAILABLE);
         }
-
-        // 步骤 3：读草稿组装 TEXT / CARD
-        AiChatVo response = composeReply(session.getSessionUuid(), reply);
-
-        // 步骤 4：刷新过期时间
-        sessionService.refreshExpiry(session);
-        return response;
+        return composeReply(session.getSessionUuid(), reply);
     }
 
     /**
@@ -94,8 +109,11 @@ public class AiChatService {
      * <p>草稿条目在写好后仍可能因商品下架/规格停用而失去价格，此类条目不计入卡片
      * （下单侧同样会被计价引擎拒绝），避免给出失真的金额；若因此没有任何可计价条目，
      * 退化为 TEXT 而非返回空卡片。</p>
+     *
+     * <p>公开可见是因为流式编排在「决策命中、草稿已落库」后要用同一份逻辑把草稿组装成卡片
+     * ——卡片的金额口径必须只有一个来源，不能在两处各算一遍。</p>
      */
-    private AiChatVo composeReply(String sessionUuid, String reply) {
+    public AiChatVo composeReply(String sessionUuid, String reply) {
         List<DraftItem> items = sessionService.loadDraft(sessionUuid);
         if (items.isEmpty()) {
             return AiChatVo.text(sessionUuid, reply);
